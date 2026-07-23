@@ -18,6 +18,14 @@ interface AuthPendingRow {
   name: string | null;
   otp_verified: boolean;
   expires_at: string;
+  last_sent_at?: string | null;
+}
+
+export interface OtpResendStatus {
+  ok: boolean;
+  retryAfterSeconds: number;
+  cooldownSeconds: number;
+  lastSentAt: string | null;
 }
 
 function assertConfigured() {
@@ -76,6 +84,7 @@ function mapPendingSignup(row: AuthPendingRow): PendingSignup {
     name: row.name || '',
     email: row.email,
     expiresAt: new Date(row.expires_at).getTime(),
+    lastSentAt: row.last_sent_at ? new Date(row.last_sent_at).getTime() : undefined,
   };
 }
 
@@ -84,7 +93,82 @@ function mapPendingReset(row: AuthPendingRow): PendingReset {
     email: row.email,
     expiresAt: new Date(row.expires_at).getTime(),
     otpVerified: !!row.otp_verified,
+    lastSentAt: row.last_sent_at ? new Date(row.last_sent_at).getTime() : undefined,
   };
+}
+
+function mapResendStatus(raw: Record<string, unknown> | null | undefined): OtpResendStatus {
+  return {
+    ok: Boolean(raw?.ok),
+    retryAfterSeconds: Number(raw?.retry_after_seconds) || 0,
+    cooldownSeconds: Number(raw?.cooldown_seconds) || 60,
+    lastSentAt: raw?.last_sent_at ? String(raw.last_sent_at) : null,
+  };
+}
+
+export async function getOtpResendStatus(
+  email: string,
+  kind: AuthPendingKind
+): Promise<OtpResendStatus> {
+  assertConfigured();
+  const { data, error } = await getSupabase().rpc('get_otp_resend_status', {
+    p_email: email.trim().toLowerCase(),
+    p_kind: kind,
+  });
+  if (error) throw new Error(error.message);
+  return mapResendStatus(data as Record<string, unknown>);
+}
+
+async function claimOtpResend(email: string, kind: AuthPendingKind): Promise<OtpResendStatus> {
+  const { data, error } = await getSupabase().rpc('claim_otp_resend', {
+    p_email: email.trim().toLowerCase(),
+    p_kind: kind,
+    p_force_initial: false,
+  });
+  if (error) throw new Error(error.message);
+  return mapResendStatus(data as Record<string, unknown>);
+}
+
+/** Resend signup confirmation OTP (server-enforced cooldown). */
+export async function resendSignUpOtp(email: string): Promise<OtpResendStatus> {
+  assertConfigured();
+  const normalized = email.trim().toLowerCase();
+  const gate = await claimOtpResend(normalized, 'signup');
+  if (!gate.ok) {
+    throw new Error(`Please wait ${gate.retryAfterSeconds}s before requesting another code.`);
+  }
+
+  const supabase = getSupabase();
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email: normalized,
+    options: {
+      emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/` : undefined,
+    },
+  });
+  if (error) {
+    // Roll back claim window slightly by not failing hard on auth errors after claim —
+    // still surface the error to the user.
+    mapAuthError(error, 'Could not resend verification code.');
+  }
+  return gate;
+}
+
+/** Resend password-recovery OTP (server-enforced cooldown). */
+export async function resendResetOtp(email: string): Promise<OtpResendStatus> {
+  assertConfigured();
+  const normalized = email.trim().toLowerCase();
+  const gate = await claimOtpResend(normalized, 'reset');
+  if (!gate.ok) {
+    throw new Error(`Please wait ${gate.retryAfterSeconds}s before requesting another code.`);
+  }
+
+  const supabase = getSupabase();
+  const { error } = await supabase.auth.resetPasswordForEmail(normalized, {
+    redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/new-password` : undefined,
+  });
+  if (error) mapAuthError(error, 'Could not resend recovery code.');
+  return gate;
 }
 
 export async function getPendingSignup(email?: string): Promise<PendingSignup | null> {

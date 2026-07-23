@@ -16,8 +16,11 @@ import {
   signOut as signOutApi,
   startPasswordReset as startPasswordResetApi,
   startSignUp as startSignUpApi,
+  resendSignUpOtp as resendSignUpOtpApi,
+  resendResetOtp as resendResetOtpApi,
   verifyResetOtp as verifyResetOtpApi,
   verifySignUpOtp as verifySignUpOtpApi,
+  type OtpResendStatus,
 } from './supabaseAuth';
 
 interface AuthContextValue {
@@ -31,8 +34,10 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<AuthSession>;
   startSignUp: (name: string, email: string, password: string) => Promise<{ email: string; session?: AuthSession }>;
   verifySignUpOtp: (otp: string, email?: string) => Promise<AuthSession>;
+  resendSignUpOtp: (email?: string) => Promise<OtpResendStatus>;
   startPasswordReset: (email: string) => Promise<{ email: string }>;
   verifyResetOtp: (otp: string, email?: string) => Promise<{ email: string }>;
+  resendResetOtp: (email?: string) => Promise<OtpResendStatus>;
   completePasswordReset: (newPassword: string, email?: string) => Promise<AuthSession>;
   /** Verify Razorpay payment server-side and apply the purchased plan. */
   confirmPayment: (
@@ -167,6 +172,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session);
         return session;
       },
+      resendSignUpOtp: async (email) => {
+        const target = email || pendingSignup?.email;
+        if (!target) throw new Error('Signup session expired. Please sign up again.');
+        const status = await resendSignUpOtpApi(target);
+        const pending = await getPendingSignup(target);
+        setPendingSignupState(pending);
+        return status;
+      },
       startPasswordReset: async (email) => {
         const result = await startPasswordResetApi(email);
         setPendingResetState(result.pending);
@@ -178,6 +191,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const result = await verifyResetOtpApi(target, otp);
         setPendingResetState(result.pending);
         return { email: result.email };
+      },
+      resendResetOtp: async (email) => {
+        const target = email || pendingReset?.email;
+        if (!target) throw new Error('Reset session expired. Please try again.');
+        const status = await resendResetOtpApi(target);
+        const pending = await getPendingReset(target);
+        setPendingResetState(pending);
+        return status;
       },
       completePasswordReset: async (newPassword, email) => {
         const target = email || pendingReset?.email;

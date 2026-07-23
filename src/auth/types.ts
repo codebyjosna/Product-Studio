@@ -14,12 +14,14 @@ export interface PendingSignup {
   name: string;
   email: string;
   expiresAt: number;
+  lastSentAt?: number;
 }
 
 export interface PendingReset {
   email: string;
   expiresAt: number;
   otpVerified?: boolean;
+  lastSentAt?: number;
 }
 
 export const PLAN_LABELS: Record<PlanId, string> = {

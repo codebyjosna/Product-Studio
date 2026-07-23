@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { AuthShell, AuthError, AuthLink } from '../components/AppHeader';
+import { OtpResendControl } from '../components/OtpResendControl';
 
 interface ResetOtpState {
   email?: string;
@@ -10,7 +11,7 @@ interface ResetOtpState {
 }
 
 export function ResetOtpPage() {
-  const { verifyResetOtp, pendingReset, hydratePendingReset } = useAuth();
+  const { verifyResetOtp, resendResetOtp, pendingReset, hydratePendingReset } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -138,6 +139,13 @@ export function ResetOtpPage() {
           Continue
         </button>
       </form>
+      {email ? (
+        <OtpResendControl
+          email={email}
+          kind="reset"
+          onResend={() => resendResetOtp(email)}
+        />
+      ) : null}
       <p className="mt-6 text-sm text-mist text-center">
         Wrong email? <AuthLink to="/reset-password">Start over</AuthLink>
       </p>

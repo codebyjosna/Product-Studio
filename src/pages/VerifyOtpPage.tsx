@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { AuthShell, AuthError, AuthLink } from '../components/AppHeader';
+import { OtpResendControl } from '../components/OtpResendControl';
 
 interface OtpLocationState {
   email?: string;
@@ -10,7 +11,7 @@ interface OtpLocationState {
 }
 
 export function VerifyOtpPage() {
-  const { verifySignUpOtp, pendingSignup, hydratePendingSignup } = useAuth();
+  const { verifySignUpOtp, resendSignUpOtp, pendingSignup, hydratePendingSignup } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -135,6 +136,13 @@ export function VerifyOtpPage() {
           Verify & continue
         </button>
       </form>
+      {email ? (
+        <OtpResendControl
+          email={email}
+          kind="signup"
+          onResend={() => resendSignUpOtp(email)}
+        />
+      ) : null}
       <p className="mt-6 text-sm text-mist text-center">
         Wrong email? <AuthLink to="/signup">Start over</AuthLink>
       </p>
