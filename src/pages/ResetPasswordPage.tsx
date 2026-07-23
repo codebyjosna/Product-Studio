@@ -17,7 +17,7 @@ export function ResetPasswordPage() {
     setLoading(true);
     try {
       const result = await startPasswordReset(email);
-      navigate('/reset-otp', {
+      navigate(`/reset-otp?email=${encodeURIComponent(result.email)}`, {
         replace: true,
         state: { email: result.email },
       });

@@ -1,13 +1,12 @@
-import React, { useEffect, useMemo } from 'react';
-import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Check, Home, RotateCcw, X } from 'lucide-react';
+import { Check, Home, Loader2, RotateCcw, X } from 'lucide-react';
 import { AppHeader } from '../components/AppHeader';
 import { useAuth } from '../auth/AuthContext';
 import { clearCheckoutDraft } from '../lib/checkoutDraft';
-import { normalizePlanId } from '../auth/types';
-import { recordTransaction } from '../auth/profile';
-
+import { getPlanById } from '../lib/catalog';
+import { getSupabase } from '../lib/supabase';
 
 export type TxnStatus = 'success' | 'failed';
 
@@ -22,22 +21,6 @@ export interface TransactionResult {
   createdAt: string;
 }
 
-const STORE_PREFIX = 'ps_txn_';
-
-export function saveTransactionResult(result: TransactionResult) {
-  sessionStorage.setItem(STORE_PREFIX + result.txnId, JSON.stringify(result));
-}
-
-export function loadTransactionResult(txnId: string): TransactionResult | null {
-  try {
-    const raw = sessionStorage.getItem(STORE_PREFIX + txnId);
-    if (!raw) return null;
-    return JSON.parse(raw) as TransactionResult;
-  } catch {
-    return null;
-  }
-}
-
 export function generateTxnId(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   const bytes = new Uint8Array(12);
@@ -47,44 +30,71 @@ export function generateTxnId(): string {
   return id;
 }
 
+async function loadTransactionByCode(txnCode: string): Promise<TransactionResult | null> {
+  const { data, error } = await getSupabase()
+    .from('transactions')
+    .select('*')
+    .eq('txn_code', txnCode)
+    .maybeSingle();
+  if (error || !data) return null;
+
+  const plan = await getPlanById(data.plan_id).catch(() => undefined);
+  const status: TxnStatus = data.status === 'success' ? 'success' : 'failed';
+
+  return {
+    status,
+    txnId: data.txn_code,
+    planName: plan?.name || data.plan_id,
+    planId: data.plan_id,
+    billing: data.billing || 'monthly',
+    amountLabel: data.amount_label || '',
+    message: data.message || undefined,
+    createdAt: data.created_at,
+  };
+}
+
 export function TransactionSummaryPage() {
   const { txnId } = useParams();
-  const location = useLocation();
   const navigate = useNavigate();
   const { user, refreshSession } = useAuth();
-
-  const result = useMemo(() => {
-    const fromState = location.state as TransactionResult | null;
-    if (fromState?.txnId && fromState.txnId === txnId) return fromState;
-    if (txnId) return loadTransactionResult(txnId);
-    return null;
-  }, [location.state, txnId]);
+  const [result, setResult] = useState<TransactionResult | null | undefined>(undefined);
 
   useEffect(() => {
-    // Plan is already applied server-side on confirm — only refresh session / soft-note failures.
-    if (result?.status === 'success' && user) {
-      clearCheckoutDraft();
-      void refreshSession();
-    } else if (result?.status === 'failed' && user) {
-      void recordTransaction({
-        txnCode: result.txnId,
-        planId: normalizePlanId(result.planId),
-        billing: result.billing,
-        amountLabel: result.amountLabel,
-        status: 'failed',
-        message: result.message,
-      }).catch(() => undefined);
+    if (!txnId) {
+      setResult(null);
+      return;
     }
-  }, [
-    result?.status,
-    result?.planId,
-    result?.txnId,
-    result?.billing,
-    result?.amountLabel,
-    result?.message,
-    user,
-    refreshSession,
-  ]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const row = await loadTransactionByCode(txnId);
+        if (!cancelled) setResult(row);
+      } catch {
+        if (!cancelled) setResult(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [txnId]);
+
+  useEffect(() => {
+    if (result?.status === 'success' && user) {
+      void clearCheckoutDraft().catch(() => undefined);
+      void refreshSession();
+    }
+  }, [result?.status, user, refreshSession]);
+
+  if (result === undefined) {
+    return (
+      <div className="app-shell min-h-screen w-full flex flex-col font-sans text-snow">
+        <AppHeader />
+        <main className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-accent" />
+        </main>
+      </div>
+    );
+  }
 
   if (!txnId || !result) {
     return <Navigate to="/" replace />;
@@ -93,7 +103,7 @@ export function TransactionSummaryPage() {
   const success = result.status === 'success';
 
   const goHome = () => {
-    clearCheckoutDraft();
+    void clearCheckoutDraft().catch(() => undefined);
     if (user) navigate(`/${user.userId}`);
     else navigate('/');
   };
@@ -176,9 +186,7 @@ export function TransactionSummaryPage() {
           )}
 
           <motion.h1
-            className={`text-2xl md:text-3xl font-extrabold tracking-tight mb-2 ${
-              success ? 'text-snow' : 'text-snow'
-            }`}
+            className="text-2xl md:text-3xl font-extrabold tracking-tight mb-2 text-snow"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15 }}

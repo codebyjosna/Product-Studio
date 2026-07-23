@@ -135,7 +135,7 @@ The app uses a multi-step pipeline powered by Google's Gemini models:
 - SPA frontend talks to `/api/*` on the same Express host.
 - In development, Express mounts Vite middleware (HMR).
 - In production, Express serves `dist/` static assets and SPA fallback.
-- Auth, plans, and tokens are persisted in **browser `localStorage`** (client-side account store for this remix).
+- Auth, plans, tokens, FX, fiscal, and checkout drafts are persisted in **Supabase Postgres** (not browser storage).
 - Route modules are **lazy-loaded**; every navigation shows a **skeleton** first.
 
 ---
@@ -413,7 +413,7 @@ Requires a valid checkout draft; otherwise redirects back to order summary.
 - **Cost:** **10 tokens** per generation action (AI image, video submit, or edit).
 - Header shows live remaining balance.
 - Balance ≤ insufficient for one generation → user is sent to Upgrade with an out-of-tokens message.
-- Auth + token state live in `localStorage` (`ps_users`, `ps_session`).
+- Auth + token state live in Supabase Auth + `profiles` (no localStorage).
 
 ---
 

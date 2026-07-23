@@ -3,16 +3,14 @@ import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from '
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { AppHeader } from '../components/AppHeader';
 import { useAuth } from '../auth/AuthContext';
-import { getPlanById, parseBilling, planPrice } from '../data/plans';
-import { loadCheckoutDraft } from '../lib/checkoutDraft';
+import type { AppPlan } from '../lib/catalog';
+import { formatMoney, getFiscalForCountry, getPlanById, parseBilling, planPrice } from '../lib/catalog';
+import { loadCheckoutDraft, type CheckoutDraft } from '../lib/checkoutDraft';
 import { convertFromUsd } from '../lib/fx';
 import { apiFetch, edgeFetch } from '../lib/api';
-import { formatMoney, getFiscalForCountry } from '../data/taxCurrency';
-import {
-  generateTxnId,
-  saveTransactionResult,
-  type TransactionResult,
-} from './TransactionSummaryPage';
+import { recordTransaction } from '../auth/profile';
+import { normalizePlanId } from '../auth/types';
+import { generateTxnId } from './TransactionSummaryPage';
 
 function loadRazorpayScript(): Promise<boolean> {
   return new Promise((resolve) => {
@@ -34,6 +32,8 @@ interface Totals {
   total: number;
   exchangeRate: number;
 }
+
+type Fiscal = NonNullable<Awaited<ReturnType<typeof getFiscalForCountry>>>;
 
 async function createRazorpayOrder(body: Record<string, unknown>) {
   const payload = JSON.stringify(body);
@@ -64,28 +64,70 @@ export function FinalSummaryPage() {
   const { planId } = useParams();
   const [searchParams] = useSearchParams();
   const billing = parseBilling(searchParams.get('billing'));
-  const plan = getPlanById(planId);
   const navigate = useNavigate();
   const location = useLocation();
   const { user, authReady, confirmPayment } = useAuth();
 
-  const draft = loadCheckoutDraft();
+  const [plan, setPlan] = useState<AppPlan | null | undefined>(undefined);
+  const [draft, setDraft] = useState<CheckoutDraft | null | undefined>(undefined);
+  const [fiscal, setFiscal] = useState<Fiscal | null>(null);
+  const [usdPrice, setUsdPrice] = useState(0);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [loadingFx, setLoadingFx] = useState(true);
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [foundPlan, loadedDraft] = await Promise.all([
+          getPlanById(planId),
+          loadCheckoutDraft(),
+        ]);
+        if (cancelled) return;
+        setPlan(foundPlan ?? null);
+        setDraft(loadedDraft);
+
+        if (foundPlan) {
+          const price = await planPrice(foundPlan, billing);
+          if (!cancelled) setUsdPrice(price);
+        }
+
+        const country = loadedDraft?.address?.country;
+        if (
+          loadedDraft &&
+          loadedDraft.planId === planId &&
+          loadedDraft.billing === billing &&
+          country
+        ) {
+          const f = await getFiscalForCountry(country);
+          if (!cancelled) setFiscal(f);
+        } else if (!cancelled) {
+          setFiscal(null);
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          setError(err?.message || 'Could not load checkout.');
+          setPlan(null);
+          setDraft(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [planId, billing]);
+
   const addressOk =
     !!draft &&
     draft.planId === planId &&
     draft.billing === billing &&
-    !!draft.address?.country;
-
-  const fiscal = addressOk ? getFiscalForCountry(draft.address.country) : null;
-  const usdPrice = plan ? planPrice(plan, billing) : 0;
+    !!draft.address?.country &&
+    !!fiscal;
 
   useEffect(() => {
-    if (!plan || !addressOk || !fiscal) {
+    if (!plan || !addressOk || !fiscal || !usdPrice) {
       setLoadingFx(false);
       return;
     }
@@ -111,9 +153,18 @@ export function FinalSummaryPage() {
     return () => {
       cancelled = true;
     };
-  }, [plan, addressOk, fiscal?.currency, usdPrice]);
+  }, [plan, addressOk, fiscal, usdPrice]);
 
-  if (!authReady) return null;
+  if (!authReady || plan === undefined || draft === undefined) {
+    return (
+      <div className="app-shell min-h-screen w-full flex flex-col font-sans text-snow">
+        <AppHeader />
+        <main className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-accent" />
+        </main>
+      </div>
+    );
+  }
   if (!user) {
     return (
       <Navigate
@@ -124,26 +175,32 @@ export function FinalSummaryPage() {
     );
   }
   if (!plan) return <Navigate to="/upgrade" replace />;
-  if (!addressOk || !draft) {
+  if (!draft || draft.planId !== planId || draft.billing !== billing || !draft.address?.country) {
     return <Navigate to={`/order-summary/${planId}?billing=${billing}`} replace />;
   }
 
-  const goToTransaction = (status: 'success' | 'failed', message?: string, txnId?: string) => {
+  const goToTransaction = async (status: 'success' | 'failed', message?: string, txnId?: string) => {
     if (!totals || !fiscal) return;
     const id = txnId || generateTxnId();
-    const result: TransactionResult = {
-      status,
-      txnId: id,
-      planName: plan.name,
-      planId: plan.id,
-      billing,
-      amountLabel: formatMoney(totals.total, fiscal),
-      message,
-      createdAt: new Date().toISOString(),
-    };
-    saveTransactionResult(result);
+    const amountLabel = formatMoney(totals.total, fiscal);
+
+    if (status === 'failed') {
+      try {
+        await recordTransaction({
+          txnCode: id,
+          planId: normalizePlanId(plan.id),
+          billing,
+          amountLabel,
+          status: 'failed',
+          message,
+        });
+      } catch {
+        // Still navigate — page may show missing if insert failed
+      }
+    }
+
     setPaying(false);
-    navigate(`/transaction-summary/${id}`, { replace: true, state: result });
+    navigate(`/transaction-summary/${id}`, { replace: true });
   };
 
   const onPay = async () => {
@@ -188,9 +245,9 @@ export function FinalSummaryPage() {
                 razorpay_signature: response.razorpay_signature,
                 amountLabel,
               });
-              goToTransaction('success', undefined, txnCode);
+              await goToTransaction('success', undefined, txnCode);
             } catch (err: any) {
-              goToTransaction(
+              await goToTransaction(
                 'failed',
                 err?.message || 'Payment could not be confirmed.'
               );
@@ -207,7 +264,7 @@ export function FinalSummaryPage() {
           response?.error?.description ||
           response?.error?.reason ||
           'Payment was declined or could not be completed.';
-        goToTransaction('failed', msg);
+        void goToTransaction('failed', msg);
       });
 
       rzp.open();
@@ -308,7 +365,7 @@ export function FinalSummaryPage() {
             <button
               type="button"
               onClick={onPay}
-              disabled={paying || loadingFx || !totals}
+              disabled={paying || loadingFx || !totals || !fiscal}
               className="inline-flex items-center justify-center gap-2 flex-1 py-3 px-4 rounded-lg font-mono text-xs font-bold uppercase tracking-widest text-ink bg-accent hover:bg-accent-dim transition-colors disabled:opacity-60"
             >
               {paying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}

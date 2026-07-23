@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Check, Hexagon, Triangle, Circle } from 'lucide-react';
+import { Check, Hexagon, Triangle, Circle, Loader2 } from 'lucide-react';
 import { AppHeader } from '../components/AppHeader';
 import { SeoHead } from '../components/SeoHead';
 import { useAuth } from '../auth/AuthContext';
-import { Billing, PLANS, Plan, planPrice } from '../data/plans';
+import type { AppPlan } from '../lib/catalog';
+import { getPlans, planPrice } from '../lib/catalog';
 
+type Billing = 'monthly' | 'annual';
 
-function PlanIcon({ type, popular }: { type: Plan['icon']; popular?: boolean }) {
+function PlanIcon({ type, popular }: { type: AppPlan['icon']; popular?: boolean }) {
   const color = popular ? 'text-[#c8f542]' : 'text-sky-400';
   const ring = popular
     ? 'border-[#c8f542]/40 bg-[#c8f542]/10 shadow-[0_0_24px_rgba(200,245,66,0.25)]'
@@ -22,14 +24,129 @@ function PlanIcon({ type, popular }: { type: Plan['icon']; popular?: boolean }) 
   );
 }
 
+const PlanCard = ({
+  plan,
+  billing,
+  onSelect,
+}: {
+  plan: AppPlan;
+  billing: Billing;
+  onSelect: (planId: string) => void;
+}) => {
+  const [price, setPrice] = useState<number | null>(null);
+  const popular = !!plan.popular;
+  const periodLabel = billing === 'monthly' ? '/ MO' : '/ YR';
+
+  useEffect(() => {
+    let cancelled = false;
+    void planPrice(plan, billing).then((p) => {
+      if (!cancelled) setPrice(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [plan, billing]);
+
+  return (
+    <div
+      className={`relative flex flex-col rounded-[1.75rem] border px-6 pb-6 pt-12 ${
+        popular
+          ? 'lg:-mt-4 lg:mb-[-1rem] border-sky-400/35 bg-gradient-to-b from-sky-500/20 via-panel/90 to-panel shadow-[0_0_50px_rgba(56,189,248,0.12)]'
+          : 'border-line/90 bg-panel/75 backdrop-blur-md'
+      }`}
+    >
+      <PlanIcon type={plan.icon} popular={popular} />
+
+      <div className="mb-5">
+        <span className="inline-flex px-3 py-1 rounded-full border border-line-strong text-[10px] font-mono uppercase tracking-[0.2em] text-mist">
+          {plan.name}
+        </span>
+      </div>
+
+      <div className="mb-2 flex items-end gap-2">
+        <span
+          className={`text-5xl md:text-6xl font-extrabold tracking-tight leading-none ${
+            popular ? 'text-[#c8f542]' : 'text-snow'
+          }`}
+        >
+          {price == null ? '…' : `$${price}`}
+        </span>
+        <span className="pb-1.5 text-sm font-mono text-mist">{periodLabel}</span>
+      </div>
+
+      <p className="text-sm text-fog mb-6">{plan.tagline}</p>
+
+      <ul className="space-y-3 mb-8 flex-1">
+        {plan.features.map((feature) => (
+          <li key={feature} className="flex items-start gap-2.5 text-sm text-fog">
+            <span
+              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
+                popular ? 'bg-[#c8f542]/15 text-[#c8f542]' : 'bg-sky-500/15 text-sky-400'
+              }`}
+            >
+              <Check className="w-3 h-3" strokeWidth={3} />
+            </span>
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
+
+      <button
+        type="button"
+        onClick={() => onSelect(plan.id)}
+        className={`group w-full flex items-center overflow-hidden rounded-xl border transition-colors ${
+          popular
+            ? 'border-[#c8f542]/40 bg-[#0b1220] hover:border-[#c8f542]/70'
+            : 'border-line-strong bg-[#0b1220] hover:border-sky-400/50'
+        }`}
+      >
+        <span
+          className={`flex h-12 w-12 shrink-0 items-center justify-center ${
+            popular ? 'bg-[#c8f542] text-ink' : 'bg-sky-500 text-white'
+          }`}
+        >
+          <span className="text-lg leading-none">›</span>
+        </span>
+        <span className="flex-1 text-center font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-snow">
+          Get started
+        </span>
+      </button>
+
+      {popular && (
+        <p className="mt-4 text-center text-[10px] font-mono uppercase tracking-[0.2em] text-mist">
+          — Limited time offer —
+        </p>
+      )}
+    </div>
+  );
+};
+
 export function UpgradePage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
   const needsTokens = (location.state as { reason?: string } | null)?.reason === 'tokens';
   const [billing, setBilling] = useState<Billing>('monthly');
+  const [plans, setPlans] = useState<AppPlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const periodLabel = billing === 'monthly' ? '/ MO' : '/ YR';
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const list = await getPlans();
+        if (!cancelled) setPlans(list.filter((p) => p.id !== 'free'));
+      } catch (err: any) {
+        if (!cancelled) setError(err?.message || 'Could not load plans.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const selectPlan = (planId: string) => {
     const next = `/order-summary/${planId}?billing=${billing}`;
@@ -109,86 +226,21 @@ export function UpgradePage() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-6 lg:items-stretch pt-8">
-            {PLANS.map((plan) => {
-              const price = planPrice(plan, billing);
-              const popular = !!plan.popular;
-
-              return (
-                <div
-                  key={plan.id}
-                  className={`relative flex flex-col rounded-[1.75rem] border px-6 pb-6 pt-12 ${
-                    popular
-                      ? 'lg:-mt-4 lg:mb-[-1rem] border-sky-400/35 bg-gradient-to-b from-sky-500/20 via-panel/90 to-panel shadow-[0_0_50px_rgba(56,189,248,0.12)]'
-                      : 'border-line/90 bg-panel/75 backdrop-blur-md'
-                  }`}
-                >
-                  <PlanIcon type={plan.icon} popular={popular} />
-
-                  <div className="mb-5">
-                    <span className="inline-flex px-3 py-1 rounded-full border border-line-strong text-[10px] font-mono uppercase tracking-[0.2em] text-mist">
-                      {plan.name}
-                    </span>
-                  </div>
-
-                  <div className="mb-2 flex items-end gap-2">
-                    <span
-                      className={`text-5xl md:text-6xl font-extrabold tracking-tight leading-none ${
-                        popular ? 'text-[#c8f542]' : 'text-snow'
-                      }`}
-                    >
-                      ${price}
-                    </span>
-                    <span className="pb-1.5 text-sm font-mono text-mist">{periodLabel}</span>
-                  </div>
-
-                  <p className="text-sm text-fog mb-6">{plan.tagline}</p>
-
-                  <ul className="space-y-3 mb-8 flex-1">
-                    {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-2.5 text-sm text-fog">
-                        <span
-                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
-                            popular ? 'bg-[#c8f542]/15 text-[#c8f542]' : 'bg-sky-500/15 text-sky-400'
-                          }`}
-                        >
-                          <Check className="w-3 h-3" strokeWidth={3} />
-                        </span>
-                        <span>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <button
-                    type="button"
-                    onClick={() => selectPlan(plan.id)}
-                    className={`group w-full flex items-center overflow-hidden rounded-xl border transition-colors ${
-                      popular
-                        ? 'border-[#c8f542]/40 bg-[#0b1220] hover:border-[#c8f542]/70'
-                        : 'border-line-strong bg-[#0b1220] hover:border-sky-400/50'
-                    }`}
-                  >
-                    <span
-                      className={`flex h-12 w-12 shrink-0 items-center justify-center ${
-                        popular ? 'bg-[#c8f542] text-ink' : 'bg-sky-500 text-white'
-                      }`}
-                    >
-                      <span className="text-lg leading-none">›</span>
-                    </span>
-                    <span className="flex-1 text-center font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-snow">
-                      Get started
-                    </span>
-                  </button>
-
-                  {popular && (
-                    <p className="mt-4 text-center text-[10px] font-mono uppercase tracking-[0.2em] text-mist">
-                      — Limited time offer —
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {loading ? (
+            <div className="flex justify-center py-16">
+              <Loader2 className="w-6 h-6 animate-spin text-accent" />
+            </div>
+          ) : error ? (
+            <p className="text-center text-sm text-danger">{error}</p>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-6 lg:items-stretch pt-8">
+              {plans.map((plan) => (
+                <React.Fragment key={plan.id}>
+                  <PlanCard plan={plan} billing={billing} onSelect={selectPlan} />
+                </React.Fragment>
+              ))}
+            </div>
+          )}
 
           <p className="mt-10 text-center text-xs text-mist/80 font-mono">
             All plans include a 30-day access window from purchase.

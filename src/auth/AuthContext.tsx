@@ -1,11 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { AuthSession, PendingReset, PendingSignup, PlanId } from './types';
 import { normalizePlanId } from './types';
-import {
-  TOKENS_PER_GENERATION,
-  formatTokenBalance,
-  hasEnoughTokens,
-} from './tokens';
+import { formatTokenBalance, hasEnoughTokens } from './tokens';
+import { getTokensPerGeneration } from '../lib/catalog';
 import { isSupabaseConfigured, getSupabase } from '../lib/supabase';
 import {
   completePasswordReset as completePasswordResetApi,
@@ -15,8 +12,6 @@ import {
   fetchSessionFromAuth,
   getPendingReset,
   getPendingSignup,
-  setPendingReset as persistPendingReset,
-  setPendingSignup as persistPendingSignup,
   signInWithPassword,
   signOut as signOutApi,
   startPasswordReset as startPasswordResetApi,
@@ -38,7 +33,7 @@ interface AuthContextValue {
   verifySignUpOtp: (otp: string, email?: string) => Promise<AuthSession>;
   startPasswordReset: (email: string) => Promise<{ email: string }>;
   verifyResetOtp: (otp: string, email?: string) => Promise<{ email: string }>;
-  completePasswordReset: (newPassword: string) => Promise<AuthSession>;
+  completePasswordReset: (newPassword: string, email?: string) => Promise<AuthSession>;
   /** Verify Razorpay payment server-side and apply the purchased plan. */
   confirmPayment: (
     payload: ConfirmRazorpayPaymentPayload
@@ -47,6 +42,10 @@ interface AuthContextValue {
   consumeTokens: (cost?: number) => Promise<boolean>;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
+  /** Hydrate pending signup from DB when landing with ?email= */
+  hydratePendingSignup: (email: string) => Promise<PendingSignup | null>;
+  /** Hydrate pending reset from DB when landing with ?email= */
+  hydratePendingReset: (email: string) => Promise<PendingReset | null>;
   pendingSignup: PendingSignup | null;
   pendingReset: PendingReset | null;
 }
@@ -56,12 +55,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthSession | null>(null);
   const [authReady, setAuthReady] = useState(false);
-  const [pendingSignup, setPendingSignupState] = useState<PendingSignup | null>(() =>
-    typeof window !== 'undefined' ? getPendingSignup() : null
-  );
-  const [pendingReset, setPendingResetState] = useState<PendingReset | null>(() =>
-    typeof window !== 'undefined' ? getPendingReset() : null
-  );
+  const [generationCost, setGenerationCost] = useState(10);
+  const [pendingSignup, setPendingSignupState] = useState<PendingSignup | null>(null);
+  const [pendingReset, setPendingResetState] = useState<PendingReset | null>(null);
 
   const refreshSession = useCallback(async () => {
     if (!isSupabaseConfigured()) {
@@ -89,8 +85,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const session = await fetchSessionFromAuth();
-        if (mounted) setUser(session);
+        const [session, tokensCost] = await Promise.all([
+          fetchSessionFromAuth(),
+          getTokensPerGeneration().catch(() => 10),
+        ]);
+        if (mounted) {
+          setUser(session);
+          setGenerationCost(tokensCost);
+        }
       } catch {
         if (mounted) setUser(null);
       } finally {
@@ -127,11 +129,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       planId: user ? normalizePlanId(user.planId) : 'free',
       tokens: user ? user.tokens : null,
       tokensLabel: user ? formatTokenBalance(user.tokens) : '—',
-      generationCost: TOKENS_PER_GENERATION,
-      canGenerate: user ? hasEnoughTokens(user.tokens) : false,
+      generationCost,
+      canGenerate: user ? hasEnoughTokens(user.tokens, generationCost) : false,
       pendingSignup,
       pendingReset,
       refreshSession,
+      hydratePendingSignup: async (email) => {
+        const pending = await getPendingSignup(email);
+        setPendingSignupState(pending);
+        return pending;
+      },
+      hydratePendingReset: async (email) => {
+        const pending = await getPendingReset(email);
+        setPendingResetState(pending);
+        return pending;
+      },
       signIn: async (email, password) => {
         const session = await signInWithPassword(email, password);
         setUser(session);
@@ -139,40 +151,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
       startSignUp: async (name, email, password) => {
         const result = await startSignUpApi(name, email, password);
-        const pending = getPendingSignup();
-        setPendingSignupState(pending);
+        setPendingSignupState(result.pending);
         const session = await fetchSessionFromAuth();
         if (session) {
           setUser(session);
           return { email: result.email, session };
         }
-        return result;
+        return { email: result.email };
       },
       verifySignUpOtp: async (otp, email) => {
-        const target = email || getPendingSignup()?.email;
+        const target = email || pendingSignup?.email;
         if (!target) throw new Error('Signup session expired. Please sign up again.');
         const session = await verifySignUpOtpApi(target, otp);
         setPendingSignupState(null);
-        persistPendingSignup(null);
         setUser(session);
         return session;
       },
       startPasswordReset: async (email) => {
         const result = await startPasswordResetApi(email);
-        setPendingResetState(getPendingReset());
-        return result;
+        setPendingResetState(result.pending);
+        return { email: result.email };
       },
       verifyResetOtp: async (otp, email) => {
-        const target = email || getPendingReset()?.email;
+        const target = email || pendingReset?.email;
         if (!target) throw new Error('Reset session expired. Please try again.');
         const result = await verifyResetOtpApi(target, otp);
-        setPendingResetState(getPendingReset());
-        return result;
+        setPendingResetState(result.pending);
+        return { email: result.email };
       },
-      completePasswordReset: async (newPassword) => {
-        const session = await completePasswordResetApi(newPassword);
+      completePasswordReset: async (newPassword, email) => {
+        const target = email || pendingReset?.email;
+        const session = await completePasswordResetApi(newPassword, target);
         setPendingResetState(null);
-        persistPendingReset(null);
         setUser(session);
         return session;
       },
@@ -181,7 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(result.session);
         return result;
       },
-      consumeTokens: async (cost = TOKENS_PER_GENERATION) => {
+      consumeTokens: async (cost = generationCost) => {
         if (!user) return false;
         const result = await consumeUserTokens(cost);
         if (result.session) setUser(result.session);
@@ -194,7 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setPendingResetState(null);
       },
     };
-  }, [user, authReady, pendingSignup, pendingReset, refreshSession]);
+  }, [user, authReady, generationCost, pendingSignup, pendingReset, refreshSession]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

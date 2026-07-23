@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Loader2, ArrowRight, ChevronRight, Download } from 'lucide-react';
-import { PRODUCTS, ATMOSPHERES, MediaSelection } from '../data.js';
+import { MediaSelection, SuggestionChip } from '../data.js';
+import { loadStudioPresets } from '../lib/catalog';
 import { ImageUploader } from '../components/ImageUploader.js';
 import { VideoOutput } from '../components/VideoOutput.js';
 import { ScrollRow } from '../components/ScrollRow.js';
@@ -22,6 +23,17 @@ interface VideoVersion {
   prompt: string;         // the cinematic directive (V1) or the edit instructions
 }
 
+function presetsToChips(
+  rows: Awaited<ReturnType<typeof loadStudioPresets>>
+): SuggestionChip[] {
+  return rows.map((p) => ({
+    id: p.id,
+    label: p.label,
+    prompt: p.prompt,
+    description: p.description,
+  }));
+}
+
 export function StudioPage() {
   const { user, canGenerate, generationCost, refreshSession } = useAuth();
   const navigate = useNavigate();
@@ -33,6 +45,8 @@ export function StudioPage() {
   const [atmosphere, setAtmosphere] = useState<MediaSelection | null>(null);
   const [appState, setAppState] = useState<AppState>('IDLE');
   const [submittedImages, setSubmittedImages] = useState<string[]>([]);
+  const [products, setProducts] = useState<SuggestionChip[]>([]);
+  const [atmospheres, setAtmospheres] = useState<SuggestionChip[]>([]);
 
   // "Generate your own atmosphere": a setting the user types instead of picking
   // or uploading an atmosphere image. On submit it's expanded by Flash Lite and
@@ -48,6 +62,26 @@ export function StudioPage() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [editText, setEditText] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [productRows, atmosphereRows] = await Promise.all([
+          loadStudioPresets('product'),
+          loadStudioPresets('atmosphere'),
+        ]);
+        if (cancelled) return;
+        setProducts(presetsToChips(productRows));
+        setAtmospheres(presetsToChips(atmosphereRows));
+      } catch {
+        // Presets optional for studio — uploads still work
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [promptOpen, setPromptOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
@@ -363,7 +397,7 @@ export function StudioPage() {
           <ImageUploader
             title="Product Images"
             type="product"
-            suggestions={PRODUCTS}
+            suggestions={products}
             selection={product}
             onSelect={setProduct}
             disabled={isGenerating}
@@ -372,7 +406,7 @@ export function StudioPage() {
           <ImageUploader
             title="Atmospheres"
             type="atmosphere"
-            suggestions={ATMOSPHERES}
+            suggestions={atmospheres}
             selection={atmosphere}
             onSelect={selectAtmosphere}
             disabled={isGenerating}

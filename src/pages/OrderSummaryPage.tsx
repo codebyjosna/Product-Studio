@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Check } from 'lucide-react';
+import { ArrowLeft, Check, Loader2 } from 'lucide-react';
 import { AppHeader } from '../components/AppHeader';
 import { CountrySelect } from '../components/CountrySelect';
-import { getPlanById, parseBilling, planPrice } from '../data/plans';
+import type { AppPlan } from '../lib/catalog';
+import { getPlanById, parseBilling, planPrice } from '../lib/catalog';
 import { useAuth } from '../auth/AuthContext';
 import { saveCheckoutDraft } from '../lib/checkoutDraft';
-
 
 const fieldClass =
   'w-full bg-ink/70 border border-line text-fog px-3 py-3 font-mono text-sm rounded-lg focus:outline-none focus:ring-1 focus:ring-accent/60 focus:border-accent/40 placeholder:text-mist/40';
@@ -24,11 +24,13 @@ export function OrderSummaryPage() {
   const { planId } = useParams();
   const [searchParams] = useSearchParams();
   const billing = parseBilling(searchParams.get('billing'));
-  const plan = getPlanById(planId);
   const navigate = useNavigate();
   const location = useLocation();
   const { user, authReady } = useAuth();
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [plan, setPlan] = useState<AppPlan | null | undefined>(undefined);
+  const [price, setPrice] = useState(0);
 
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
@@ -38,7 +40,41 @@ export function OrderSummaryPage() {
   const [pincode, setPincode] = useState('');
   const [country, setCountry] = useState('');
 
-  if (!authReady) return null;
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const found = await getPlanById(planId);
+        if (cancelled) return;
+        setPlan(found ?? null);
+        if (found) {
+          const p = await planPrice(found, billing);
+          if (!cancelled) setPrice(p);
+        }
+      } catch {
+        if (!cancelled) setPlan(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [planId, billing]);
+
+  useEffect(() => {
+    if (user?.name) setName((n) => n || user.name);
+    if (user?.email) setEmail((e) => e || user.email);
+  }, [user?.name, user?.email]);
+
+  if (!authReady || plan === undefined) {
+    return (
+      <div className="app-shell min-h-screen w-full flex flex-col font-sans text-snow">
+        <AppHeader />
+        <main className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-6 h-6 animate-spin text-accent" />
+        </main>
+      </div>
+    );
+  }
   if (!user) {
     return (
       <Navigate
@@ -52,10 +88,9 @@ export function OrderSummaryPage() {
     return <Navigate to="/upgrade" replace />;
   }
 
-  const price = planPrice(plan, billing);
   const periodLabel = billing === 'monthly' ? 'Monthly' : 'Annual';
 
-  const onNext = (e: React.FormEvent) => {
+  const onNext = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -64,21 +99,27 @@ export function OrderSummaryPage() {
       return;
     }
 
-    saveCheckoutDraft({
-      planId: plan.id,
-      billing,
-      address: {
-        name: name.trim(),
-        email: email.trim(),
-        fullAddress: fullAddress.trim(),
-        city: city.trim(),
-        state: state.trim(),
-        pincode: pincode.trim() || undefined,
-        country: country.trim(),
-      },
-    });
-
-    navigate(`/final-summary/${plan.id}?billing=${billing}`);
+    setSaving(true);
+    try {
+      await saveCheckoutDraft({
+        planId: plan.id,
+        billing,
+        address: {
+          name: name.trim(),
+          email: email.trim(),
+          fullAddress: fullAddress.trim(),
+          city: city.trim(),
+          state: state.trim(),
+          pincode: pincode.trim() || undefined,
+          country: country.trim(),
+        },
+      });
+      navigate(`/final-summary/${plan.id}?billing=${billing}`);
+    } catch (err: any) {
+      setError(err?.message || 'Could not save checkout details.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -259,8 +300,10 @@ export function OrderSummaryPage() {
             </button>
             <button
               type="submit"
-              className="inline-flex items-center justify-center gap-2 flex-1 py-3 px-4 rounded-lg font-mono text-xs font-bold uppercase tracking-widest text-ink bg-accent hover:bg-accent-dim transition-colors"
+              disabled={saving}
+              className="inline-flex items-center justify-center gap-2 flex-1 py-3 px-4 rounded-lg font-mono text-xs font-bold uppercase tracking-widest text-ink bg-accent hover:bg-accent-dim transition-colors disabled:opacity-60"
             >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               Next
             </button>
           </div>

@@ -24,7 +24,7 @@ export function SignUpPage() {
         navigate(`/${result.session.userId}`, { replace: true });
         return;
       }
-      navigate('/verify-otp', {
+      navigate(`/verify-otp?email=${encodeURIComponent(result.email)}`, {
         replace: true,
         state: { email: result.email, mode: 'signup' },
       });

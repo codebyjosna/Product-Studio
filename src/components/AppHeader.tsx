@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ChevronDown, Eye, EyeOff, FileText, LogOut, Shield, Sparkles, Coins, Receipt, Mail } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { PLAN_LABELS, type PlanId } from '../auth/types';
-import { TOKENS_PER_GENERATION } from '../auth/tokens';
 
 const menuItemClass =
   'w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm text-fog hover:bg-ink/60 hover:text-snow transition-colors';
@@ -25,13 +24,13 @@ function PlanBadge({ planId }: { planId: PlanId }) {
   );
 }
 
-function TokenStatus({ tokens }: { tokens: number | null }) {
-  const empty = tokens !== null && tokens < TOKENS_PER_GENERATION;
-  const low = tokens !== null && tokens > 0 && tokens < TOKENS_PER_GENERATION * 2;
+function TokenStatus({ tokens, generationCost }: { tokens: number | null; generationCost: number }) {
+  const empty = tokens !== null && tokens < generationCost;
+  const low = tokens !== null && tokens > 0 && tokens < generationCost * 2;
 
   return (
     <div
-      title={tokens == null ? 'Unlimited tokens' : `${tokens} tokens remaining · ${TOKENS_PER_GENERATION} per generation`}
+      title={tokens == null ? 'Unlimited tokens' : `${tokens} tokens remaining · ${generationCost} per generation`}
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[10px] font-bold uppercase tracking-[0.12em] ${
         empty
           ? 'border-danger/40 text-danger bg-danger/10'
@@ -48,7 +47,7 @@ function TokenStatus({ tokens }: { tokens: number | null }) {
 }
 
 export function AppHeader() {
-  const { user, planId, tokens, signOut } = useAuth();
+  const { user, planId, tokens, generationCost, signOut } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -71,7 +70,7 @@ export function AppHeader() {
         {user && (
           <>
             <PlanBadge planId={planId} />
-            <TokenStatus tokens={tokens} />
+            <TokenStatus tokens={tokens} generationCost={generationCost} />
           </>
         )}
       </div>

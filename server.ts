@@ -15,10 +15,18 @@ import {
   createVerifiedRazorpayOrder,
   refundTokensForUser,
 } from './server/billing';
+import { getTokensPerGeneration } from './server/pricing';
 
-const TOKENS_PER_GENERATION = 10;
 const ownedFiles = new Map<string, Set<string>>(); // userId -> Gemini fileIds
 const ownedInteractions = new Map<string, Set<string>>();
+
+let tokenCostCache: { at: number; cost: number } | null = null;
+async function tokenCost(): Promise<number> {
+  if (tokenCostCache && Date.now() - tokenCostCache.at < 60_000) return tokenCostCache.cost;
+  const cost = await getTokensPerGeneration();
+  tokenCostCache = { at: Date.now(), cost };
+  return cost;
+}
 
 function rememberOwnership(userId: string, fileId: string | null, interactionId?: string | null) {
   if (fileId) {
@@ -371,7 +379,7 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
     const userId = req.authUser!.id;
     let charged = false;
     try {
-      await consumeTokensForUser(userId, TOKENS_PER_GENERATION);
+      await consumeTokensForUser(userId, (await tokenCost()));
       charged = true;
       const { prompt, productImages = [], atmosphereImages = [] }: GenerateBody & { prompt?: string } = req.body;
       const ai = getAiClient();
@@ -406,7 +414,7 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
 
       res.json({ interactionId: interaction.id, uri: interaction.output_video.uri, fileId });
     } catch (e: any) {
-      if (charged) await refundTokensForUser(userId, TOKENS_PER_GENERATION);
+      if (charged) await refundTokensForUser(userId, (await tokenCost()));
       console.error('Error generating video:', e);
       const status = e?.status || 500;
       res.status(status).json({ error: safeClientError(e, 'Failed to generate video.') });
@@ -428,7 +436,7 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
         res.status(403).json({ error: 'You do not own this video interaction.' });
         return;
       }
-      await consumeTokensForUser(userId, TOKENS_PER_GENERATION);
+      await consumeTokensForUser(userId, (await tokenCost()));
       charged = true;
       const ai = getAiClient();
 
@@ -453,7 +461,7 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
 
       res.json({ interactionId: interaction.id, uri: interaction.output_video.uri, fileId });
     } catch (e: any) {
-      if (charged) await refundTokensForUser(userId, TOKENS_PER_GENERATION);
+      if (charged) await refundTokensForUser(userId, (await tokenCost()));
       console.error('Error editing video:', e);
       const status = e?.status || 500;
       res.status(status).json({ error: safeClientError(e, 'Failed to edit video.') });
@@ -544,7 +552,7 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
     const userId = req.authUser!.id;
     let charged = false;
     try {
-      await consumeTokensForUser(userId, TOKENS_PER_GENERATION);
+      await consumeTokensForUser(userId, (await tokenCost()));
       charged = true;
       const { prompt } = req.body;
       const ai = getAiClient();
@@ -573,7 +581,7 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
       const responseData = JSON.parse(rawText);
       res.json(responseData);
     } catch (error: any) {
-      if (charged) await refundTokensForUser(userId, TOKENS_PER_GENERATION);
+      if (charged) await refundTokensForUser(userId, (await tokenCost()));
       console.error(error);
       const status = error?.status || 500;
       res.status(status).json({ error: safeClientError(error, 'Failed to generate text content.') });
@@ -588,7 +596,7 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
       if (!prompt) {
         return res.status(400).json({ error: "Prompt is required" });
       }
-      await consumeTokensForUser(userId, TOKENS_PER_GENERATION);
+      await consumeTokensForUser(userId, (await tokenCost()));
       charged = true;
       const ai = getAiClient();
 
@@ -631,11 +639,11 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
       if (base64EncodeString) {
         res.json({ imageUrl: `data:image/jpeg;base64,${base64EncodeString}` });
       } else {
-        if (charged) await refundTokensForUser(userId, TOKENS_PER_GENERATION);
+        if (charged) await refundTokensForUser(userId, (await tokenCost()));
         res.status(500).json({ error: "No image generated" });
       }
     } catch (error: any) {
-      if (charged) await refundTokensForUser(userId, TOKENS_PER_GENERATION);
+      if (charged) await refundTokensForUser(userId, (await tokenCost()));
       console.error("Error generating image:", error);
       const status = error?.status || 500;
       res.status(status).json({ error: safeClientError(error, 'Failed to generate image') });

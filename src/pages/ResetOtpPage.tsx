@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { AuthShell, AuthError, AuthLink } from '../components/AppHeader';
@@ -10,9 +10,10 @@ interface ResetOtpState {
 }
 
 export function ResetOtpPage() {
-  const { verifyResetOtp, pendingReset } = useAuth();
+  const { verifyResetOtp, pendingReset, hydratePendingReset } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const state = (location.state || {}) as ResetOtpState;
 
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
@@ -20,13 +21,20 @@ export function ResetOtpPage() {
   const [loading, setLoading] = useState(false);
   const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
 
-  const email = state.email || pendingReset?.email;
+  const email =
+    searchParams.get('email')?.trim().toLowerCase() ||
+    state.email?.trim().toLowerCase() ||
+    pendingReset?.email;
 
   useEffect(() => {
-    if (!email && !pendingReset) {
+    if (!email) {
       navigate('/reset-password', { replace: true });
+      return;
     }
-  }, [email, pendingReset, navigate]);
+    if (!pendingReset || pendingReset.email !== email) {
+      void hydratePendingReset(email);
+    }
+  }, [email, pendingReset, hydratePendingReset, navigate]);
 
   const focusAt = (index: number) => {
     inputsRef.current[index]?.focus();
@@ -72,7 +80,7 @@ export function ResetOtpPage() {
     setLoading(true);
     try {
       const result = await verifyResetOtp(code, email);
-      navigate('/new-password', {
+      navigate(`/new-password?email=${encodeURIComponent(result.email)}`, {
         replace: true,
         state: { email: result.email },
       });

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, Search } from 'lucide-react';
-import { COUNTRIES } from '../data/countries';
+import { getCountryNames } from '../lib/catalog';
 
 interface CountrySelectProps {
   id: string;
@@ -12,14 +12,33 @@ interface CountrySelectProps {
 export function CountrySelect({ id, value, onChange, required }: CountrySelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [countries, setCountries] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const names = await getCountryNames();
+        if (!cancelled) setCountries(names);
+      } catch {
+        if (!cancelled) setCountries([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return [...COUNTRIES];
-    return COUNTRIES.filter((c) => c.toLowerCase().includes(q));
-  }, [query]);
+    if (!q) return countries;
+    return countries.filter((c) => c.toLowerCase().includes(q));
+  }, [query, countries]);
 
   useEffect(() => {
     if (!open) return;
@@ -48,7 +67,7 @@ export function CountrySelect({ id, value, onChange, required }: CountrySelectPr
         className="w-full flex items-center justify-between gap-2 bg-ink/70 border border-line text-left px-3 py-3 font-mono text-sm rounded-lg focus:outline-none focus:ring-1 focus:ring-accent/60 focus:border-accent/40"
       >
         <span className={value ? 'text-fog' : 'text-mist/40'}>
-          {value || 'Select country'}
+          {value || (loading ? 'Loading countries…' : 'Select country')}
         </span>
         <ChevronDown className={`w-4 h-4 text-mist shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -77,7 +96,9 @@ export function CountrySelect({ id, value, onChange, required }: CountrySelectPr
             />
           </div>
           <ul role="listbox" className="max-h-52 overflow-y-auto py-1">
-            {filtered.length === 0 ? (
+            {loading ? (
+              <li className="px-3 py-2 text-xs font-mono text-mist">Loading…</li>
+            ) : filtered.length === 0 ? (
               <li className="px-3 py-2 text-xs font-mono text-mist">No countries found</li>
             ) : (
               filtered.map((country) => {

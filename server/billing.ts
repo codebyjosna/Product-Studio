@@ -6,7 +6,7 @@ import {
   normalizePlanId,
   type PlanId,
 } from './supabase';
-import { computeCheckoutTotals, PLAN_PRICES_USD } from './pricing';
+import { computeCheckoutTotals, getFiscalForCountryName, getPlanPriceUsd } from './pricing';
 
 export function verifyRazorpaySignature(
   orderId: string,
@@ -55,26 +55,24 @@ export async function createVerifiedRazorpayOrder(input: {
     throw Object.assign(new Error('Razorpay is not configured.'), { status: 503 });
   }
 
-  const plan = PLAN_PRICES_USD[input.planId];
+  const plan = await getPlanPriceUsd(input.planId);
   if (!plan) throw Object.assign(new Error('Invalid plan selected.'), { status: 400 });
 
-  const isAnnual = input.billing === 'annual';
-  const fiscalCurrency = computeCheckoutTotals({
-    planId: input.planId,
-    billing: isAnnual ? 'annual' : 'monthly',
-    country: input.country,
-    fxRate: 1,
-  })!.fiscal.currency;
+  const fiscal = await getFiscalForCountryName(input.country);
+  if (!fiscal) {
+    throw Object.assign(new Error('Billing country not found in database.'), { status: 400 });
+  }
 
-  const fxRate = await getFxRateForCurrency(fiscalCurrency);
+  const isAnnual = input.billing === 'annual';
+  const fxRate = await getFxRateForCurrency(fiscal.currency);
   if (fxRate == null) {
     throw Object.assign(
-      new Error(`Exchange rate unavailable for ${fiscalCurrency}. Try again later.`),
+      new Error(`Exchange rate unavailable for ${fiscal.currency}. Try again later.`),
       { status: 503 }
     );
   }
 
-  const totals = computeCheckoutTotals({
+  const totals = await computeCheckoutTotals({
     planId: input.planId,
     billing: isAnnual ? 'annual' : 'monthly',
     country: input.country,
@@ -154,7 +152,6 @@ export async function confirmRazorpayAndApplyPlan(input: {
 
   const admin = getSupabaseAdmin();
 
-  // Idempotency: same payment already applied
   const { data: existing } = await admin
     .from('transactions')
     .select('*')
@@ -171,7 +168,6 @@ export async function confirmRazorpayAndApplyPlan(input: {
     };
   }
 
-  // Confirm payment with Razorpay API
   const keyId = process.env.RAZORPAY_KEY_ID!;
   const auth = Buffer.from(`${keyId}:${keySecret}`).toString('base64');
   const payRes = await fetch(`https://api.razorpay.com/v1/payments/${input.razorpayPaymentId}`, {
@@ -231,7 +227,6 @@ export async function consumeTokensForUser(userId: string, cost: number) {
     throw Object.assign(new Error('Invalid token cost.'), { status: 400 });
   }
   const admin = getSupabaseAdmin();
-  // Use service role client with RPC — consume_tokens uses auth.uid(); call via SQL update instead
   const { data: row, error: readError } = await admin
     .from('profiles')
     .select('*')
@@ -241,7 +236,7 @@ export async function consumeTokensForUser(userId: string, cost: number) {
     throw Object.assign(new Error('Profile not found.'), { status: 404 });
   }
   if (row.tokens == null) {
-    return row; // unlimited
+    return row;
   }
   if (row.tokens < cost) {
     throw Object.assign(new Error('insufficient_tokens'), { status: 402 });
@@ -266,7 +261,6 @@ export async function refundTokensForUser(userId: string, cost: number) {
   await admin.from('profiles').update({ tokens: row.tokens + cost }).eq('id', userId);
 }
 
-/** Attach JWT from request for client helpers. */
 export function userIdFromAuthed(req: AuthedRequest): string | null {
   return req.authUser?.id ?? null;
 }

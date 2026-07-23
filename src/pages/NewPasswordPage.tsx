@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { AuthShell, AuthError, AuthLink, FieldLabel, PasswordInput } from '../components/AppHeader';
@@ -10,9 +10,10 @@ interface NewPasswordState {
 }
 
 export function NewPasswordPage() {
-  const { completePasswordReset, pendingReset, authReady } = useAuth();
+  const { completePasswordReset, pendingReset, hydratePendingReset, authReady } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const state = (location.state || {}) as NewPasswordState;
 
   const [password, setPassword] = useState('');
@@ -22,7 +23,10 @@ export function NewPasswordPage() {
   const [recoveryAllowed, setRecoveryAllowed] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
 
-  const email = state.email || pendingReset?.email;
+  const email =
+    searchParams.get('email')?.trim().toLowerCase() ||
+    state.email?.trim().toLowerCase() ||
+    pendingReset?.email;
 
   useEffect(() => {
     let cancelled = false;
@@ -30,7 +34,12 @@ export function NewPasswordPage() {
     const check = async () => {
       if (!authReady) return;
 
-      if (pendingReset?.otpVerified) {
+      let pending = pendingReset;
+      if (email && (!pending || pending.email !== email)) {
+        pending = await hydratePendingReset(email);
+      }
+
+      if (pending?.otpVerified) {
         if (!cancelled) {
           setRecoveryAllowed(true);
           setCheckingSession(false);
@@ -55,7 +64,10 @@ export function NewPasswordPage() {
 
       if (!cancelled) {
         setCheckingSession(false);
-        navigate(pendingReset ? '/reset-otp' : '/reset-password', { replace: true });
+        const resetPath = email
+          ? `/reset-otp?email=${encodeURIComponent(email)}`
+          : '/reset-password';
+        navigate(pending || email ? resetPath : '/reset-password', { replace: true });
       }
     };
 
@@ -63,7 +75,7 @@ export function NewPasswordPage() {
     return () => {
       cancelled = true;
     };
-  }, [authReady, pendingReset, navigate]);
+  }, [authReady, pendingReset, email, hydratePendingReset, navigate]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,7 +86,7 @@ export function NewPasswordPage() {
     }
     setLoading(true);
     try {
-      const session = await completePasswordReset(password);
+      const session = await completePasswordReset(password, email);
       navigate(`/${session.userId}`, { replace: true });
     } catch (err: any) {
       setError(err.message || 'Could not update password.');

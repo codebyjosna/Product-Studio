@@ -1,12 +1,10 @@
 /**
- * Legacy localStorage auth helpers were replaced by Supabase.
- * This module re-exports the Supabase-backed API for any remaining imports.
+ * Legacy auth storage helpers — pending signup/reset now live in Supabase
+ * (`auth_pending` via RPCs) and React state in AuthContext. No browser storage.
  */
 export {
   getPendingSignup,
-  setPendingSignup,
   getPendingReset,
-  setPendingReset,
   consumeUserTokens,
   confirmPaymentAndApplyPlan,
   fetchSessionFromAuth as getSession,

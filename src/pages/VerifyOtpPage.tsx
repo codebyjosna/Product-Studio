@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { AuthShell, AuthError, AuthLink } from '../components/AppHeader';
@@ -10,9 +10,10 @@ interface OtpLocationState {
 }
 
 export function VerifyOtpPage() {
-  const { verifySignUpOtp, pendingSignup } = useAuth();
+  const { verifySignUpOtp, pendingSignup, hydratePendingSignup } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const state = (location.state || {}) as OtpLocationState;
 
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
@@ -20,13 +21,20 @@ export function VerifyOtpPage() {
   const [loading, setLoading] = useState(false);
   const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
 
-  const email = state.email || pendingSignup?.email;
+  const email =
+    searchParams.get('email')?.trim().toLowerCase() ||
+    state.email?.trim().toLowerCase() ||
+    pendingSignup?.email;
 
   useEffect(() => {
-    if (!email && !pendingSignup) {
+    if (!email) {
       navigate('/signup', { replace: true });
+      return;
     }
-  }, [email, pendingSignup, navigate]);
+    if (!pendingSignup || pendingSignup.email !== email) {
+      void hydratePendingSignup(email);
+    }
+  }, [email, pendingSignup, hydratePendingSignup, navigate]);
 
   const focusAt = (index: number) => {
     inputsRef.current[index]?.focus();
