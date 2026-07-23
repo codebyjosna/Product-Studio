@@ -70,10 +70,10 @@ export function VideoOutput({ appState, videoUrl, logs }: VideoOutputProps) {
         // if a tall image + logs ever exceed a short frame.
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 px-6 py-6 overflow-hidden">
           <Loader2 className="w-9 h-9 text-accent animate-spin shrink-0" />
-          <div className="font-mono text-sm uppercase tracking-widest text-snow shrink-0">
+          <div className="text-sm font-semibold tracking-wide text-snow shrink-0">
             {appState === 'GENERATING_ATMOSPHERE' ? 'Generating atmosphere' : appState === 'GENERATING_PROMPT' ? 'Writing prompt' : 'Rendering'}
           </div>
-          <div className="w-full max-w-md min-h-0 space-y-1.5 font-mono text-[11px] text-left">
+          <div className="w-full max-w-md min-h-0 space-y-1.5 text-[12px] text-left">
             {recentLogs.map((log) => (
               <div key={log.id} className={logColor(log.type)}>
                 <div className="truncate"><span className="text-mist/50">›</span> {log.message}</div>
@@ -92,11 +92,11 @@ export function VideoOutput({ appState, videoUrl, logs }: VideoOutputProps) {
       ) : (
         <div className="relative z-10 flex flex-col items-center text-center px-6 w-full max-w-md">
           <div className="stage-idle-dot mb-3 h-2 w-2 rounded-sm bg-accent/80" />
-          <div className="font-mono text-xs uppercase tracking-[0.22em] text-mist/70">Awaiting render</div>
+          <div className="text-sm font-medium tracking-wide text-mist/80">Awaiting render</div>
           {lastLog?.type === 'error' && (
             <div className="mt-4 w-full flex items-start gap-3 rounded-lg border border-danger/35 bg-danger-soft/35 px-4 py-3 text-left">
               <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-danger" />
-              <p className="font-mono text-xs leading-relaxed text-rose-100/90 break-words">
+              <p className="text-xs leading-relaxed text-rose-100/90 break-words">
                 {readableError(lastLog.message)}
               </p>
             </div>

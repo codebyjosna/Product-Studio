@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { AuthShell, AuthError, AuthLink, FieldLabel, PasswordInput } from '../components/AppHeader';
+import { SeoHead } from '../components/SeoHead';
 
 export function SignInPage() {
   const { signIn } = useAuth();
@@ -29,6 +30,8 @@ export function SignInPage() {
   };
 
   return (
+    <>
+    <SeoHead page="signin" />
     <AuthShell
       title="Sign in"
       subtitle={
@@ -82,5 +85,6 @@ export function SignInPage() {
         Don&apos;t have an account? <AuthLink to="/signup">Sign up</AuthLink>
       </p>
     </AuthShell>
+    </>
   );
 }

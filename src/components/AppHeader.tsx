@@ -18,7 +18,7 @@ function PlanBadge({ planId }: { planId: PlanId }) {
 
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-1 rounded-md border font-mono text-[10px] font-bold uppercase tracking-[0.18em] ${styles[planId]}`}
+      className={`inline-flex items-center px-2.5 py-1 rounded-md border text-[10px] font-bold uppercase tracking-[0.14em] ${styles[planId]}`}
     >
       {PLAN_LABELS[planId]}
     </span>
@@ -32,7 +32,7 @@ function TokenStatus({ tokens }: { tokens: number | null }) {
   return (
     <div
       title={tokens == null ? 'Unlimited tokens' : `${tokens} tokens remaining · ${TOKENS_PER_GENERATION} per generation`}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border font-mono text-[10px] font-bold uppercase tracking-[0.14em] ${
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[10px] font-bold uppercase tracking-[0.12em] ${
         empty
           ? 'border-danger/40 text-danger bg-danger/10'
           : low
@@ -134,7 +134,7 @@ export function AppHeader() {
         <button
           type="button"
           onClick={() => navigate('/signin')}
-          className="inline-flex items-center justify-center px-4 py-2 font-mono text-xs font-bold uppercase tracking-widest text-ink bg-accent hover:bg-accent-dim transition-colors rounded-md shadow-[0_0_0_1px_rgba(45,212,191,0.3)]"
+          className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold tracking-wide text-ink bg-accent hover:bg-accent-dim transition-colors rounded-md shadow-[0_0_0_1px_rgba(45,212,191,0.3)]"
         >
           Sign in
         </button>
@@ -172,7 +172,7 @@ export function PasswordInput({
         placeholder={placeholder}
         autoComplete={autoComplete}
         required={required}
-        className="w-full bg-ink/70 border border-line text-fog pr-11 pl-3 py-3 font-mono text-sm rounded-lg focus:outline-none focus:ring-1 focus:ring-accent/60 focus:border-accent/40 placeholder:text-mist/40"
+        className="w-full bg-ink/70 border border-line text-fog pr-11 pl-3 py-3 text-sm rounded-lg focus:outline-none focus:ring-1 focus:ring-accent/60 focus:border-accent/40 placeholder:text-mist/40"
       />
       <button
         type="button"
@@ -212,7 +212,7 @@ export function AuthShell({
 
 export function FieldLabel({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
   return (
-    <label htmlFor={htmlFor} className="block text-[11px] font-mono uppercase tracking-wider text-mist mb-1.5">
+    <label htmlFor={htmlFor} className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-mist mb-1.5">
       {children}
     </label>
   );
@@ -221,7 +221,7 @@ export function FieldLabel({ htmlFor, children }: { htmlFor: string; children: R
 export function AuthError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p className="text-xs font-mono text-danger bg-danger-soft/40 border border-danger/30 p-2.5 rounded-lg mb-4">
+    <p className="text-xs font-medium text-danger bg-danger-soft/40 border border-danger/30 p-2.5 rounded-lg mb-4">
       {message}
     </p>
   );

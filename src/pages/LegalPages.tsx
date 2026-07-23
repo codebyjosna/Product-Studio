@@ -1,8 +1,11 @@
 import React from 'react';
 import { AuthShell } from '../components/AppHeader';
+import { SeoHead } from '../components/SeoHead';
 
 export function TermsPage() {
   return (
+    <>
+    <SeoHead page="terms" />
     <AuthShell title="Terms & Conditions" subtitle="Rules for using Product Studio">
       <div className="space-y-3 text-sm text-mist leading-relaxed max-h-[50vh] overflow-y-auto pr-1">
         <p>By using Product Studio, you agree to upload only content you have rights to use.</p>
@@ -11,11 +14,14 @@ export function TermsPage() {
         <p>We may update these terms; continued use means you accept the latest version.</p>
       </div>
     </AuthShell>
+    </>
   );
 }
 
 export function PrivacyPage() {
   return (
+    <>
+    <SeoHead page="privacy" />
     <AuthShell title="Privacy Policy" subtitle="How we handle your information">
       <div className="space-y-3 text-sm text-mist leading-relaxed max-h-[50vh] overflow-y-auto pr-1">
         <p>Account details (name, email) are stored to provide sign-in and studio access.</p>
@@ -24,5 +30,6 @@ export function PrivacyPage() {
         <p>Contact us if you need account deletion or data questions.</p>
       </div>
     </AuthShell>
+    </>
   );
 }

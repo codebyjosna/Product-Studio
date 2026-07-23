@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { AuthShell, AuthError, AuthLink, FieldLabel, PasswordInput } from '../components/AppHeader';
+import { SeoHead } from '../components/SeoHead';
 
 export function SignUpPage() {
   const { startSignUp } = useAuth();
@@ -31,6 +32,8 @@ export function SignUpPage() {
   };
 
   return (
+    <>
+    <SeoHead page="signup" />
     <AuthShell title="Sign up" subtitle="Create your Product Studio account">
       <AuthError message={error} />
       <form onSubmit={onSubmit} className="space-y-4">
@@ -83,5 +86,6 @@ export function SignUpPage() {
         Already have an account? <AuthLink to="/signin">Sign in</AuthLink>
       </p>
     </AuthShell>
+    </>
   );
 }

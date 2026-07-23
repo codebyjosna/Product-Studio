@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Check, Hexagon, Triangle, Circle } from 'lucide-react';
 import { AppHeader } from '../components/AppHeader';
+import { SeoHead } from '../components/SeoHead';
 import { Billing, PLANS, Plan, planPrice } from '../data/plans';
 
 function PlanIcon({ type, popular }: { type: Plan['icon']; popular?: boolean }) {
@@ -33,6 +34,7 @@ export function UpgradePage() {
 
   return (
     <div className="app-shell min-h-screen w-full flex flex-col font-sans text-snow">
+      <SeoHead page="upgrade" />
       <AppHeader />
 
       <main className="relative flex-1 overflow-y-auto">

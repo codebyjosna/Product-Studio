@@ -136,7 +136,7 @@ export function ImageUploader({
       <h2 className="text-sm font-semibold tracking-wide text-fog mb-4 flex items-center justify-between">
         <span className="uppercase">{title}</span>
         {generating && (
-          <span className="flex items-center gap-1.5 text-xs text-mist font-mono normal-case">
+          <span className="flex items-center gap-1.5 text-xs text-mist font-medium">
             <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
             Generating...
           </span>
@@ -162,7 +162,7 @@ export function ImageUploader({
               </button>
             )}
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-ink via-ink/70 to-transparent p-3 pt-8">
-              <p className="text-xs font-mono text-fog line-clamp-2">
+              <p className="text-xs font-medium text-fog line-clamp-2 leading-relaxed">
                 {selection.description}
               </p>
             </div>
@@ -170,9 +170,9 @@ export function ImageUploader({
           {!disabled && (
             <button
               onClick={handleClear}
-              className="w-full py-2 font-mono text-xs uppercase tracking-wider text-mist hover:text-snow transition-colors bg-panel border border-line rounded-lg hover:border-line-strong"
+              className="w-full py-2.5 text-xs font-semibold tracking-wide text-mist hover:text-snow transition-colors bg-panel border border-line rounded-lg hover:border-line-strong"
             >
-              Reset and Generate New
+              Reset and generate new
             </button>
           )}
         </div>
@@ -188,21 +188,21 @@ export function ImageUploader({
               disabled={disabled || generating}
               placeholder={`Describe the desired ${type} (e.g. "a colorful ceramic mug on a table"...)`}
               rows={3}
-              className="w-full bg-ink/70 border border-line text-fog p-3 font-mono text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-accent/60 focus:border-accent/40 rounded-lg resize-none placeholder-mist/40"
+              className="w-full bg-ink/70 border border-line text-fog p-3 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-accent/60 focus:border-accent/40 rounded-lg resize-none placeholder-mist/40"
             />
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-[10px] font-mono uppercase tracking-wider text-mist/80">Suggestions</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mist/80">Suggestions</p>
             <div className="flex flex-wrap gap-1.5">
               {suggestions.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => handleChipClick(item)}
                   disabled={disabled || generating}
-                  className={`px-2.5 py-1 text-[11px] font-mono rounded-md border transition-all ${
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all ${
                     promptText === item.prompt
-                      ? 'bg-accent text-ink border-accent font-medium shadow-[0_0_16px_rgba(45,212,191,0.25)]'
+                      ? 'bg-accent text-ink border-accent shadow-[0_0_16px_rgba(45,212,191,0.25)]'
                       : 'bg-ink/50 text-mist border-line hover:border-line-strong hover:text-fog'
                   }`}
                 >
@@ -215,7 +215,7 @@ export function ImageUploader({
           <button
             onClick={handleGenerate}
             disabled={disabled || generating || !promptText.trim()}
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-snow hover:bg-fog text-ink font-mono text-xs font-bold uppercase tracking-wider rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2 py-3.5 px-4 bg-snow hover:bg-fog text-ink text-sm font-semibold tracking-wide rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {generating ? (
               <>
@@ -231,7 +231,7 @@ export function ImageUploader({
 
           <div className="relative flex py-1 items-center">
             <div className="flex-grow border-t border-line"></div>
-            <span className="flex-shrink mx-3 text-[10px] font-mono uppercase text-mist/60">or upload own image</span>
+            <span className="flex-shrink mx-3 text-[11px] font-medium text-mist/60">or upload your own image</span>
             <div className="flex-grow border-t border-line"></div>
           </div>
 
@@ -255,16 +255,16 @@ export function ImageUploader({
                 : 'border-line hover:border-line-strong bg-ink/30'
             }`}
           >
-            <div className="flex flex-col items-center justify-center gap-1">
+            <div className="flex flex-col items-center justify-center gap-1.5">
               <Plus className={`w-4 h-4 ${dragging ? 'text-accent' : 'text-mist'}`} />
-              <span className="font-mono text-[10px] uppercase tracking-wider text-mist">
+              <span className="text-xs font-medium text-mist">
                 Drop your reference photo or click to browse
               </span>
             </div>
           </div>
 
           {error && (
-            <p className="text-xs font-mono text-danger bg-danger-soft/40 border border-danger/30 p-2.5 rounded-lg">
+            <p className="text-xs font-medium text-danger bg-danger-soft/40 border border-danger/30 p-2.5 rounded-lg">
               {error}
             </p>
           )}

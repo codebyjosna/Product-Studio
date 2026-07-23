@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Disallow: /signin
+Disallow: /signup
+Disallow: /verify-otp
+Disallow: /reset-password
+Disallow: /reset-otp
+Disallow: /new-password
+Disallow: /order-summary/
+Disallow: /final-summary/
+Disallow: /transaction-summary/
+
+Sitemap: https://productstudio.app/sitemap.xml

@@ -7,6 +7,8 @@ import { VideoOutput } from '../components/VideoOutput.js';
 import { ScrollRow } from '../components/ScrollRow.js';
 import { toInlineImages, InlineImage } from '../images.js';
 import { AppHeader } from '../components/AppHeader.js';
+import { SeoHead } from '../components/SeoHead';
+import { SeoSection } from '../components/SeoSection';
 import { useAuth } from '../auth/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -315,8 +317,10 @@ export function StudioPage() {
   };
 
   return (
-    <div className="app-shell md:h-screen w-full flex flex-col md:overflow-hidden font-sans text-snow">
+    <div className="app-shell w-full flex flex-col font-sans text-snow">
+      <SeoHead page="home" />
 
+      <div id="studio-workspace" className="md:h-screen w-full flex flex-col md:overflow-hidden">
       {/* TOP HEADER */}
       <AppHeader />
 
@@ -349,7 +353,7 @@ export function StudioPage() {
             <button
               onClick={handleSubmit}
               disabled={!canSubmit}
-              className="group inline-flex items-center justify-center px-8 py-4 font-mono font-bold uppercase tracking-widest text-ink bg-accent hover:bg-accent-dim transition-all duration-200 w-full shadow-[0_0_0_1px_rgba(45,212,191,0.35),0_10px_40px_rgba(45,212,191,0.18)] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:bg-accent"
+              className="group inline-flex items-center justify-center px-8 py-4 font-semibold tracking-wide text-ink bg-accent hover:bg-accent-dim transition-all duration-200 w-full rounded-lg shadow-[0_0_0_1px_rgba(45,212,191,0.35),0_10px_40px_rgba(45,212,191,0.18)] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:bg-accent"
             >
               {isGenerating ? (
                 <>
@@ -380,7 +384,7 @@ export function StudioPage() {
               <ScrollRow className="flex-1 min-w-0" rowClassName="gap-4" deps={[otherVersions.length]}>
                 {otherVersions.map(v => (
                   <button key={v.label} onClick={() => selectVersion(v.label)} className="group flex-none text-left">
-                    <div className="font-mono text-xs uppercase tracking-widest text-mist group-hover:text-accent mb-1.5 transition-colors">{v.label}</div>
+                    <div className="text-xs font-semibold tracking-wide text-mist group-hover:text-accent mb-1.5 transition-colors">{v.label}</div>
                     <video
                       src={v.videoUrl}
                       muted
@@ -401,13 +405,13 @@ export function StudioPage() {
                 <div className="flex flex-col gap-1.5">
                   <button
                     onClick={() => setEditOpen(o => !o)}
-                    className="font-mono text-sm uppercase tracking-widest text-snow text-left hover:text-accent transition-colors"
+                    className="text-sm font-semibold tracking-wide text-snow text-left hover:text-accent transition-colors"
                   >
                     {selected.label}
                   </button>
                   <button
                     onClick={() => setEditOpen(o => !o)}
-                    className={`font-mono text-xs uppercase tracking-widest text-left transition-colors ${editOpen ? 'text-accent' : 'text-mist hover:text-snow'}`}
+                    className={`text-xs font-medium tracking-wide text-left transition-colors ${editOpen ? 'text-accent' : 'text-mist hover:text-snow'}`}
                   >
                     Edit
                   </button>
@@ -444,12 +448,12 @@ export function StudioPage() {
                       value={editText}
                       onChange={(e) => setEditText(e.target.value)}
                       placeholder={`Describe your changes to ${selected.label} — e.g. "warmer lighting", "slow orbit", "swap the backdrop"…`}
-                      className="w-full bg-panel-elevated/90 border border-line text-fog p-4 font-mono text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/40 resize-y min-h-[100px] placeholder:text-mist/50"
+                      className="w-full bg-panel-elevated/90 border border-line text-fog p-4 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/40 resize-y min-h-[100px] rounded-lg placeholder:text-mist/50"
                     />
                     <button
                       onClick={handleEdit}
                       disabled={!editText.trim()}
-                      className="group mt-3 inline-flex items-center justify-center px-8 py-3 font-mono font-bold uppercase tracking-widest text-ink bg-accent hover:bg-accent-dim transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-accent"
+                      className="group mt-3 inline-flex items-center justify-center px-8 py-3 font-semibold tracking-wide text-ink bg-accent hover:bg-accent-dim transition-colors rounded-lg disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-accent"
                     >
                       Submit Edit
                       <ArrowRight className="ml-3 w-5 h-5 group-hover:translate-x-1 transition-transform" />
@@ -484,7 +488,7 @@ export function StudioPage() {
               <div className="flex-1 min-w-0">
                 <button
                   onClick={() => setPromptOpen(o => !o)}
-                  className="flex items-center gap-2 font-mono text-sm font-bold uppercase tracking-widest text-snow hover:text-accent transition-colors"
+                  className="flex items-center gap-2 text-sm font-semibold tracking-wide text-snow hover:text-accent transition-colors"
                 >
                   <ChevronRight className={`w-4 h-4 transition-transform ${promptOpen ? 'rotate-90' : ''}`} />
                   Prompt
@@ -497,7 +501,7 @@ export function StudioPage() {
                       exit={{ height: 0, opacity: 0 }}
                       className="overflow-hidden"
                     >
-                      <p className="mt-3 bg-panel/80 border border-line p-4 font-mono text-sm leading-relaxed text-fog whitespace-pre-wrap">
+                      <p className="mt-3 bg-panel/80 border border-line p-4 text-sm leading-relaxed text-fog whitespace-pre-wrap rounded-lg">
                         {selected.prompt}
                       </p>
                     </motion.div>
@@ -508,7 +512,9 @@ export function StudioPage() {
           )}
         </div>
       </div>
+      </div>
 
+      <SeoSection />
     </div>
   );
 }
