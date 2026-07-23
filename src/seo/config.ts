@@ -65,7 +65,7 @@ export function getSiteUrl(): string {
   if (typeof window !== 'undefined' && window.location?.origin) {
     return window.location.origin;
   }
-  return 'https://productstudio.app';
+  return 'https://www.codewix.in';
 }
 
 export const OG_IMAGE_PATH = '/og-image.svg';
@@ -251,14 +251,6 @@ export function buildWebSiteSchema(siteUrl: string) {
     description: DEFAULT_DESCRIPTION,
     inLanguage: DEFAULT_LANG,
     publisher: { '@id': `${siteUrl}/#organization` },
-    potentialAction: {
-      '@type': 'SearchAction',
-      target: {
-        '@type': 'EntryPoint',
-        urlTemplate: `${siteUrl}/html-sitemap`,
-      },
-      'query-input': 'required name=search_term_string',
-    },
   };
 }
 

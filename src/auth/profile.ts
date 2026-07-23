@@ -1,6 +1,7 @@
 import type { AuthSession, PlanId } from '../auth/types';
 import { normalizePlanId } from '../auth/types';
 import type { ProfileRow } from '../lib/database.types';
+import { apiFetch, edgeFetch } from '../lib/api';
 import { getSupabase } from '../lib/supabase';
 
 export function profileToSession(profile: ProfileRow): AuthSession {
@@ -28,23 +29,22 @@ export async function fetchProfile(userId?: string): Promise<ProfileRow | null> 
   return data;
 }
 
+const PROFILE_RETRY_DELAYS_MS = [200, 400, 800, 1200];
+
 export async function fetchSessionFromAuth(): Promise<AuthSession | null> {
   const supabase = getSupabase();
   const { data } = await supabase.auth.getSession();
   if (!data.session?.user) return null;
 
-  const profile = await fetchProfile(data.session.user.id);
-  if (profile) return profileToSession(profile);
+  const userId = data.session.user.id;
+  let profile = await fetchProfile(userId);
+  for (let i = 0; !profile && i < PROFILE_RETRY_DELAYS_MS.length; i++) {
+    await new Promise((resolve) => setTimeout(resolve, PROFILE_RETRY_DELAYS_MS[i]));
+    profile = await fetchProfile(userId);
+  }
 
-  // Profile trigger race — synthesize from auth user until row exists
-  const u = data.session.user;
-  return {
-    userId: u.id,
-    name: (u.user_metadata?.name as string) || u.email?.split('@')[0] || 'Creator',
-    email: (u.email || '').toLowerCase(),
-    planId: 'free',
-    tokens: 30,
-  };
+  if (!profile) return null;
+  return profileToSession(profile);
 }
 
 export async function consumeTokensRpc(cost: number): Promise<AuthSession> {
@@ -62,50 +62,60 @@ export async function consumeTokensRpc(cost: number): Promise<AuthSession> {
   return profileToSession(row);
 }
 
-export async function applyPlanViaApi(planId: PlanId): Promise<AuthSession> {
-  const supabase = getSupabase();
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  if (!token) throw new Error('Not signed in.');
-
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-
-  // Prefer Supabase Edge Function when configured; fall back to Express.
-  if (supabaseUrl && anonKey) {
-    const edgeRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/apply-plan`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-        apikey: anonKey,
-      },
-      body: JSON.stringify({ planId }),
-    });
-    const edgeBody = await edgeRes.json();
-    if (edgeRes.ok && edgeBody.session) return edgeBody.session as AuthSession;
-    // If edge fails, try Express below
-  }
-
-  const res = await fetch('/api/billing/apply-plan', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ planId }),
-  });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error || 'Failed to apply plan.');
-  return body.session as AuthSession;
+export interface ConfirmRazorpayPaymentPayload {
+  planId: PlanId;
+  billing: string;
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+  amountLabel?: string;
 }
 
+export async function confirmRazorpayPaymentViaApi(
+  payload: ConfirmRazorpayPaymentPayload
+): Promise<{ session: AuthSession; txnCode: string; alreadyApplied?: boolean }> {
+  const body = JSON.stringify(payload);
+
+  try {
+    const edgeRes = await edgeFetch('confirm-razorpay-payment', {
+      method: 'POST',
+      body,
+    });
+    const edgeBody = await edgeRes.json();
+    if (edgeRes.ok && edgeBody.session && edgeBody.txnCode) {
+      return {
+        session: edgeBody.session as AuthSession,
+        txnCode: String(edgeBody.txnCode),
+        alreadyApplied: Boolean(edgeBody.alreadyApplied),
+      };
+    }
+  } catch {
+    // Fall through to Express
+  }
+
+  const res = await apiFetch('/api/razorpay/confirm-payment', {
+    method: 'POST',
+    body,
+  });
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.error || 'Failed to confirm payment.');
+  if (!result.session || !result.txnCode) {
+    throw new Error('Payment confirmed but session was incomplete.');
+  }
+  return {
+    session: result.session as AuthSession,
+    txnCode: String(result.txnCode),
+    alreadyApplied: Boolean(result.alreadyApplied),
+  };
+}
+
+/** Soft client notes for failed/pending only — success rows are inserted by the server. */
 export async function recordTransaction(input: {
   txnCode: string;
   planId: PlanId;
   billing: string;
   amountLabel?: string;
-  status: 'success' | 'failed' | 'pending';
+  status: 'failed' | 'pending';
   razorpayOrderId?: string;
   razorpayPaymentId?: string;
   message?: string;
@@ -114,7 +124,7 @@ export async function recordTransaction(input: {
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return;
 
-  await supabase.from('transactions').insert({
+  const { error } = await supabase.from('transactions').insert({
     user_id: auth.user.id,
     txn_code: input.txnCode,
     plan_id: input.planId,
@@ -125,4 +135,7 @@ export async function recordTransaction(input: {
     razorpay_payment_id: input.razorpayPaymentId ?? null,
     message: input.message ?? null,
   });
+  if (error) {
+    console.warn('Failed to record client transaction note:', error.message);
+  }
 }

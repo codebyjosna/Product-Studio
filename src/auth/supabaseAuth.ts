@@ -1,7 +1,8 @@
-import type { AuthSession, PendingReset, PendingSignup, PlanId } from './types';
+import type { AuthSession, PendingReset, PendingSignup } from './types';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 import {
-  applyPlanViaApi,
+  confirmRazorpayPaymentViaApi,
+  type ConfirmRazorpayPaymentPayload,
   consumeTokensRpc,
   fetchSessionFromAuth,
   profileToSession,
@@ -31,7 +32,13 @@ function writeJson(key: string, value: unknown | null) {
 }
 
 export function getPendingSignup(): PendingSignup | null {
-  return readJson<PendingSignup>(PENDING_SIGNUP_KEY);
+  const pending = readJson<PendingSignup>(PENDING_SIGNUP_KEY);
+  if (!pending) return null;
+  if (pending.expiresAt && Date.now() > pending.expiresAt) {
+    writeJson(PENDING_SIGNUP_KEY, null);
+    return null;
+  }
+  return pending;
 }
 
 export function setPendingSignup(pending: PendingSignup | null) {
@@ -39,7 +46,13 @@ export function setPendingSignup(pending: PendingSignup | null) {
 }
 
 export function getPendingReset(): PendingReset | null {
-  return readJson<PendingReset>(PENDING_RESET_KEY);
+  const pending = readJson<PendingReset>(PENDING_RESET_KEY);
+  if (!pending) return null;
+  if (pending.expiresAt && Date.now() > pending.expiresAt) {
+    writeJson(PENDING_RESET_KEY, null);
+    return null;
+  }
+  return pending;
 }
 
 export function setPendingReset(pending: PendingReset | null) {
@@ -204,12 +217,27 @@ export async function completePasswordReset(newPassword: string): Promise<AuthSe
   assertConfigured();
   if (newPassword.length < 6) throw new Error('Password must be at least 6 characters.');
 
+  const supabase = getSupabase();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const hasSession = !!sessionData.session;
   const pending = getPendingReset();
-  if (!pending?.otpVerified) {
+
+  if (!pending?.otpVerified && !hasSession) {
     throw new Error('Verify your email code before setting a new password.');
   }
 
-  const supabase = getSupabase();
+  // Recovery email link creates a session without going through OTP UI.
+  if (hasSession && !pending?.otpVerified) {
+    const email =
+      (sessionData.session?.user?.email || pending?.email || '').trim().toLowerCase() ||
+      'unknown';
+    setPendingReset({
+      email,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+      otpVerified: true,
+    });
+  }
+
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) mapAuthError(error, 'Could not update password.');
 
@@ -229,7 +257,7 @@ export async function signOut(): Promise<void> {
 
 export async function consumeUserTokens(cost = TOKENS_PER_GENERATION): Promise<
   | { ok: true; session: AuthSession }
-  | { ok: false; reason: 'no_user' | 'insufficient'; session: AuthSession | null }
+  | { ok: false; reason: 'no_user' | 'insufficient' | 'error'; session: AuthSession | null }
 > {
   try {
     const session = await consumeTokensRpc(cost);
@@ -240,12 +268,16 @@ export async function consumeUserTokens(cost = TOKENS_PER_GENERATION): Promise<
       return { ok: false, reason: 'insufficient', session };
     }
     const session = await fetchSessionFromAuth();
-    return { ok: false, reason: 'no_user', session };
+    return { ok: false, reason: 'error', session };
   }
 }
 
-export async function setUserPlan(planId: PlanId): Promise<AuthSession> {
-  return applyPlanViaApi(planId);
+/** Confirm a verified Razorpay payment and apply the purchased plan (server-side). */
+export async function confirmPaymentAndApplyPlan(
+  payload: ConfirmRazorpayPaymentPayload
+): Promise<{ session: AuthSession; txnCode: string; alreadyApplied?: boolean }> {
+  return confirmRazorpayPaymentViaApi(payload);
 }
 
 export { fetchSessionFromAuth, fetchProfile, profileToSession };
+export type { ConfirmRazorpayPaymentPayload };

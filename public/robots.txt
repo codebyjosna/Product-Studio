@@ -12,6 +12,7 @@ Allow: /robots.txt
 Allow: /site.webmanifest
 Allow: /favicon.svg
 Allow: /og-image.svg
+Allow: /og-image.png
 
 Disallow: /signin
 Disallow: /signup
@@ -23,6 +24,5 @@ Disallow: /order-summary/
 Disallow: /final-summary/
 Disallow: /transaction-summary/
 
-Sitemap: https://productstudio.app/sitemap.xml
-# HTML sitemap for crawlers and accessibility
-# https://productstudio.app/html-sitemap
+Sitemap: https://www.codewix.in/sitemap.xml
+# HTML sitemap: https://www.codewix.in/html-sitemap

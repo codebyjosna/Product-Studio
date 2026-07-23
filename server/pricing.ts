@@ -1,8 +1,18 @@
-/** ISO currency + tax rate (decimal) by billing country. */
+/**
+ * Shared USD plan pricing + fiscal map (server / Edge).
+ * Keep in sync with src/data/plans.ts and src/data/taxCurrency.ts
+ */
+
+export const PLAN_PRICES_USD: Record<string, { monthly: number; name: string }> = {
+  starter: { monthly: 3, name: 'Starter' },
+  pro: { monthly: 10, name: 'Pro' },
+  enterprise: { monthly: 50, name: 'Enterprise' },
+};
+
 export interface CountryFiscal {
   currency: string;
   currencySymbol: string;
-  taxRate: number; // e.g. 0.18 = 18%
+  taxRate: number;
   taxLabel: string;
 }
 
@@ -13,7 +23,6 @@ const DEFAULT_FISCAL: CountryFiscal = {
   taxLabel: 'Tax',
 };
 
-/** Map billing-address country name → currency + tax. */
 export const COUNTRY_FISCAL: Record<string, CountryFiscal> = {
   India: { currency: 'INR', currencySymbol: '₹', taxRate: 0.18, taxLabel: 'GST' },
   'United States': { currency: 'USD', currencySymbol: '$', taxRate: 0, taxLabel: 'Sales tax' },
@@ -35,12 +44,7 @@ export const COUNTRY_FISCAL: Record<string, CountryFiscal> = {
   Portugal: { currency: 'EUR', currencySymbol: '€', taxRate: 0.23, taxLabel: 'VAT' },
   Finland: { currency: 'EUR', currencySymbol: '€', taxRate: 0.255, taxLabel: 'VAT' },
   Greece: { currency: 'EUR', currencySymbol: '€', taxRate: 0.24, taxLabel: 'VAT' },
-  Poland: { currency: 'PLN', currencySymbol: 'zł', taxRate: 0.23, taxLabel: 'VAT' },
-  'Czech Republic': { currency: 'CZK', currencySymbol: 'Kč', taxRate: 0.21, taxLabel: 'VAT' },
-  Hungary: { currency: 'HUF', currencySymbol: 'Ft', taxRate: 0.27, taxLabel: 'VAT' },
-  Romania: { currency: 'RON', currencySymbol: 'lei', taxRate: 0.19, taxLabel: 'VAT' },
-  Bulgaria: { currency: 'BGN', currencySymbol: 'лв', taxRate: 0.2, taxLabel: 'VAT' },
-  Croatia: { currency: 'EUR', currencySymbol: '€', taxRate: 0.25, taxLabel: 'VAT' },
+  Poland: { currency: 'PLN', currencySymbol: 'zł ', taxRate: 0.23, taxLabel: 'VAT' },
   Sweden: { currency: 'SEK', currencySymbol: 'SEK ', taxRate: 0.25, taxLabel: 'VAT' },
   Norway: { currency: 'NOK', currencySymbol: 'NOK ', taxRate: 0.25, taxLabel: 'VAT' },
   Denmark: { currency: 'DKK', currencySymbol: 'DKK ', taxRate: 0.25, taxLabel: 'VAT' },
@@ -64,16 +68,26 @@ export const COUNTRY_FISCAL: Record<string, CountryFiscal> = {
   Israel: { currency: 'ILS', currencySymbol: '₪', taxRate: 0.17, taxLabel: 'VAT' },
   Brazil: { currency: 'BRL', currencySymbol: 'R$', taxRate: 0, taxLabel: 'Tax' },
   Mexico: { currency: 'MXN', currencySymbol: 'MX$', taxRate: 0.16, taxLabel: 'IVA' },
+  'Czech Republic': { currency: 'CZK', currencySymbol: 'Kč ', taxRate: 0.21, taxLabel: 'VAT' },
+  Hungary: { currency: 'HUF', currencySymbol: 'Ft ', taxRate: 0.27, taxLabel: 'VAT' },
+  Romania: { currency: 'RON', currencySymbol: 'lei ', taxRate: 0.19, taxLabel: 'VAT' },
+  Bulgaria: { currency: 'BGN', currencySymbol: 'лв ', taxRate: 0.2, taxLabel: 'VAT' },
+  Croatia: { currency: 'EUR', currencySymbol: '€', taxRate: 0.25, taxLabel: 'VAT' },
+  Slovakia: { currency: 'EUR', currencySymbol: '€', taxRate: 0.2, taxLabel: 'VAT' },
+  Slovenia: { currency: 'EUR', currencySymbol: '€', taxRate: 0.22, taxLabel: 'VAT' },
+  Estonia: { currency: 'EUR', currencySymbol: '€', taxRate: 0.22, taxLabel: 'VAT' },
+  Latvia: { currency: 'EUR', currencySymbol: '€', taxRate: 0.21, taxLabel: 'VAT' },
+  Lithuania: { currency: 'EUR', currencySymbol: '€', taxRate: 0.21, taxLabel: 'VAT' },
+  Luxembourg: { currency: 'EUR', currencySymbol: '€', taxRate: 0.17, taxLabel: 'VAT' },
+  Malta: { currency: 'EUR', currencySymbol: '€', taxRate: 0.18, taxLabel: 'VAT' },
+  Cyprus: { currency: 'EUR', currencySymbol: '€', taxRate: 0.19, taxLabel: 'VAT' },
 };
 
 export function getFiscalForCountry(country: string): CountryFiscal {
   return COUNTRY_FISCAL[country] || DEFAULT_FISCAL;
 }
 
-/** Currencies with 3 decimal subunits (Razorpay / ISO). */
 export const THREE_DECIMAL_CURRENCIES = new Set(['KWD', 'BHD', 'OMR']);
-
-/** Zero-decimal currencies. */
 export const ZERO_DECIMAL_CURRENCIES = new Set(['JPY', 'KRW', 'VND', 'IDR']);
 
 export function toMinorUnits(amountMajor: number, currency: string): number {
@@ -82,56 +96,36 @@ export function toMinorUnits(amountMajor: number, currency: string): number {
   return Math.round(amountMajor * 100);
 }
 
-export function formatMoney(amount: number, fiscal: CountryFiscal): string {
-  const decimals = ZERO_DECIMAL_CURRENCIES.has(fiscal.currency)
-    ? 0
-    : THREE_DECIMAL_CURRENCIES.has(fiscal.currency)
-      ? 3
-      : 2;
-  return `${fiscal.currencySymbol}${amount.toLocaleString(undefined, {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  })}`;
+export function planUsdAmount(planId: string, billing: string): number | null {
+  const plan = PLAN_PRICES_USD[planId];
+  if (!plan) return null;
+  return billing === 'annual' ? plan.monthly * 10 : plan.monthly;
 }
 
-/** Fallback USD→X rates if live FX fetch fails. */
-export const FALLBACK_USD_RATES: Record<string, number> = {
-  USD: 1,
-  INR: 83.5,
-  EUR: 0.92,
-  GBP: 0.79,
-  AED: 3.67,
-  SAR: 3.75,
-  QAR: 3.64,
-  KWD: 0.31,
-  BHD: 0.38,
-  OMR: 0.38,
-  CAD: 1.36,
-  AUD: 1.53,
-  NZD: 1.66,
-  SGD: 1.34,
-  HKD: 7.82,
-  JPY: 149,
-  KRW: 1350,
-  CNY: 7.2,
-  MYR: 4.7,
-  IDR: 15800,
-  THB: 35.5,
-  PHP: 56,
-  VND: 25400,
-  EGP: 48,
-  ZAR: 18.5,
-  TRY: 32,
-  ILS: 3.7,
-  BRL: 5.0,
-  MXN: 17,
-  SEK: 10.5,
-  NOK: 10.7,
-  DKK: 6.9,
-  CHF: 0.88,
-  PLN: 4.0,
-  CZK: 23.0,
-  HUF: 360,
-  RON: 4.6,
-  BGN: 1.8,
-};
+export function computeCheckoutTotals(input: {
+  planId: string;
+  billing: string;
+  country: string;
+  fxRate: number;
+}) {
+  const usd = planUsdAmount(input.planId, input.billing);
+  if (usd == null) return null;
+  if (!Number.isFinite(input.fxRate) || input.fxRate <= 0) return null;
+
+  const fiscal = getFiscalForCountry(input.country);
+  const planAmount = usd * input.fxRate;
+  const taxAmount = planAmount * fiscal.taxRate;
+  const total = planAmount + taxAmount;
+  const amountMinor = toMinorUnits(total, fiscal.currency);
+
+  return {
+    fiscal,
+    usdPrice: usd,
+    planAmount,
+    taxAmount,
+    total,
+    amountMinor,
+    exchangeRate: input.fxRate,
+    planName: PLAN_PRICES_USD[input.planId].name,
+  };
+}

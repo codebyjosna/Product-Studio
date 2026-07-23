@@ -4,7 +4,10 @@ import { Plus, X, Loader2 } from 'lucide-react';
 import { SuggestionChip, MediaSelection } from '../data.js';
 import { fileToDownscaledDataUrl } from '../images.js';
 import { useAuth } from '../auth/AuthContext';
+import { apiFetch } from '../lib/api';
 import { uploadUserMedia } from '../lib/mediaStorage';
+
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 interface ImageUploaderProps {
   title: string;
@@ -23,7 +26,7 @@ export function ImageUploader({
   onSelect,
   disabled = false,
 }: ImageUploaderProps) {
-  const { user, canGenerate, consumeTokens, generationCost } = useAuth();
+  const { user, canGenerate, generationCost, refreshSession } = useAuth();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -35,14 +38,9 @@ export function ImageUploader({
     navigate('/signin', { state: { from: 'generate' } });
   };
 
-  const requireTokensOrUpgrade = async () => {
+  const ensureCanGenerate = () => {
     if (!canGenerate) {
       setError(`Out of tokens. Each generation uses ${generationCost} tokens.`);
-      navigate('/upgrade', { state: { reason: 'tokens' } });
-      return false;
-    }
-    if (!(await consumeTokens())) {
-      setError('Out of tokens. Please upgrade your plan.');
       navigate('/upgrade', { state: { reason: 'tokens' } });
       return false;
     }
@@ -50,11 +48,13 @@ export function ImageUploader({
   };
 
   const handleChipClick = (suggestion: SuggestionChip) => {
+    if (disabled || generating) return;
     setPromptText(suggestion.prompt);
     setError(null);
   };
 
   const handleGenerate = async () => {
+    if (disabled) return;
     if (!user) {
       requireSignIn();
       return;
@@ -64,15 +64,15 @@ export function ImageUploader({
       setError('Please write or select a prompt first.');
       return;
     }
-    if (!(await requireTokensOrUpgrade())) return;
+    // Local UX gate only — server charges tokens on generate.
+    if (!ensureCanGenerate()) return;
 
     setGenerating(true);
     setError(null);
 
     try {
-      const res = await fetch('/api/generate-image', {
+      const res = await apiFetch('/api/generate-image', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, type }),
       });
 
@@ -88,18 +88,21 @@ export function ImageUploader({
           images: [data.imageUrl],
           description: prompt,
         });
+        void refreshSession();
       } else {
         throw new Error('Image URL not returned from backend');
       }
     } catch (err: any) {
       console.error('Error in image generation:', err);
       setError(err.message || 'Failed to generate image. Please try again.');
+      void refreshSession();
     } finally {
       setGenerating(false);
     }
   };
 
   const handleFiles = async (fileList: FileList | null) => {
+    if (disabled || generating) return;
     if (!user) {
       requireSignIn();
       return;
@@ -108,6 +111,12 @@ export function ImageUploader({
       f.type.startsWith('image/')
     );
     if (picked.length === 0) return;
+
+    if (picked[0].size > MAX_UPLOAD_BYTES) {
+      setError('Image must be 10MB or smaller.');
+      if (inputRef.current) inputRef.current.value = '';
+      return;
+    }
 
     try {
       const dataUrl = await fileToDownscaledDataUrl(picked[0]);
@@ -137,6 +146,7 @@ export function ImageUploader({
   };
 
   const hasSelection = !!selection && selection.images.length > 0;
+  const uploadBlocked = disabled || generating;
 
   return (
     <div className="mb-8 p-5 rounded-xl border border-line/90 bg-panel-elevated/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
@@ -243,23 +253,26 @@ export function ImageUploader({
           </div>
 
           <div
-            onClick={() => !generating && inputRef.current?.click()}
+            onClick={() => !uploadBlocked && inputRef.current?.click()}
             onDragOver={(e) => {
               e.preventDefault();
-              if (!generating) setDragging(true);
+              if (!uploadBlocked) setDragging(true);
             }}
             onDragLeave={() => setDragging(false)}
             onDrop={(e) => {
               e.preventDefault();
               setDragging(false);
-              if (!generating) handleFiles(e.dataTransfer.files);
+              if (!uploadBlocked) handleFiles(e.dataTransfer.files);
             }}
             role="button"
-            tabIndex={0}
-            className={`border border-dashed p-4 text-center rounded-lg transition-all cursor-pointer ${
-              dragging
-                ? 'border-accent bg-accent/10'
-                : 'border-line hover:border-line-strong bg-ink/30'
+            tabIndex={uploadBlocked ? -1 : 0}
+            aria-disabled={uploadBlocked}
+            className={`border border-dashed p-4 text-center rounded-lg transition-all ${
+              uploadBlocked
+                ? 'border-line bg-ink/20 opacity-50 cursor-not-allowed'
+                : dragging
+                ? 'border-accent bg-accent/10 cursor-pointer'
+                : 'border-line hover:border-line-strong bg-ink/30 cursor-pointer'
             }`}
           >
             <div className="flex flex-col items-center justify-center gap-1.5">
@@ -283,6 +296,7 @@ export function ImageUploader({
         type="file"
         accept="image/*"
         className="hidden"
+        disabled={uploadBlocked}
         onChange={(e) => handleFiles(e.target.files)}
       />
     </div>

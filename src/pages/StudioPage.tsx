@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Loader2, ArrowRight, ChevronRight, Download } from 'lucide-react';
 import { PRODUCTS, ATMOSPHERES, MediaSelection } from '../data.js';
@@ -9,6 +9,7 @@ import { toInlineImages, InlineImage } from '../images.js';
 import { AppHeader } from '../components/AppHeader.js';
 import { SeoHead } from '../components/SeoHead';
 import { useAuth } from '../auth/AuthContext';
+import { apiFetch } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 
 type LogType = 'info' | 'success' | 'warn' | 'error';
@@ -22,7 +23,7 @@ interface VideoVersion {
 }
 
 export function StudioPage() {
-  const { user, canGenerate, consumeTokens, generationCost } = useAuth();
+  const { user, canGenerate, generationCost, refreshSession } = useAuth();
   const navigate = useNavigate();
   const requireSignIn = () => {
     navigate('/signin', { state: { from: 'generate' } });
@@ -42,6 +43,8 @@ export function StudioPage() {
   const [versions, setVersions] = useState<VideoVersion[]>([]);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const versionCount = useRef(0);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const objectUrlsRef = useRef<string[]>([]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editText, setEditText] = useState('');
@@ -49,6 +52,19 @@ export function StudioPage() {
   const [downloading, setDownloading] = useState(false);
 
   const [logs, setLogs] = useState<{ id: string; timestamp: string; message: string; type: LogType; image?: string }[]>([]);
+
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      for (const url of objectUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+      objectUrlsRef.current = [];
+    };
+  }, []);
 
   const addLog = (message: string, type: LogType = 'info', image?: string) => {
     setLogs(prev => [...prev, {
@@ -94,27 +110,48 @@ export function StudioPage() {
   const selected = versions.find(v => v.label === selectedLabel) ?? null;
   const otherVersions = versions.filter(v => v.label !== selectedLabel);
 
-  const addVersion = (interactionId: string, fileId: string, promptText: string) => {
+  const addVersion = (interactionId: string, videoUrl: string, promptText: string) => {
     const label = `V${++versionCount.current}`;
-    setVersions(prev => [...prev, { label, interactionId, videoUrl: `/api/video/${fileId}`, prompt: promptText }]);
+    setVersions(prev => [...prev, { label, interactionId, videoUrl, prompt: promptText }]);
     setSelectedLabel(label);
   };
 
-  // Polls Omni until the render is ACTIVE, then records the version.
+  const clearPoll = () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  };
+
+  // Polls Omni until the render is ACTIVE, then records the version with an authed blob URL.
   const pollVideoStatus = (fileId: string, interactionId: string, promptText: string, isInitial: boolean) => {
     addLog('Polling Omni for render status...', 'warn');
+    clearPoll();
     let lastState = '';
 
-    const interval = setInterval(async () => {
+    pollIntervalRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/file-status/${fileId}`);
+        const res = await apiFetch(`/api/file-status/${fileId}`);
         const data = await res.json();
 
         if (data.state === 'ACTIVE') {
-          clearInterval(interval);
+          clearPoll();
           addLog('Render complete. Stream ready.', 'success');
-          addVersion(interactionId, fileId, promptText);
+          try {
+            const videoRes = await apiFetch(`/api/video/${fileId}`);
+            if (!videoRes.ok) throw new Error(`Video fetch HTTP ${videoRes.status}`);
+            const blob = await videoRes.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            objectUrlsRef.current.push(objectUrl);
+            addVersion(interactionId, objectUrl, promptText);
+          } catch (fetchErr: any) {
+            addLog(`Could not load video: ${fetchErr.message}`, 'error');
+            setAppState(isInitial ? 'IDLE' : 'VIDEO_READY');
+            void refreshSession();
+            return;
+          }
           setAppState('VIDEO_READY');
+          void refreshSession();
           if (isInitial) {
             // Reset the upload sidebar for the next run.
             setProduct(null);
@@ -123,9 +160,10 @@ export function StudioPage() {
             setGeneratePrompt('');
           }
         } else if (data.state === 'FAILED') {
-          clearInterval(interval);
+          clearPoll();
           addLog('Omni backend reported FAILED state.', 'error');
           setAppState(isInitial ? 'IDLE' : 'VIDEO_READY');
+          void refreshSession();
         } else if (data.state !== lastState) {
           lastState = data.state;
           addLog(`Render status: ${data.state}`);
@@ -137,7 +175,7 @@ export function StudioPage() {
   };
 
   // Initial generation from the sidebar: optionally render an atmosphere image
-  // first, then write the prompt and render V1.
+  // first, then write the prompt and render V1. Server charges tokens.
   const handleSubmit = async () => {
     if (!user) {
       requireSignIn();
@@ -149,11 +187,6 @@ export function StudioPage() {
     }
     if (!canGenerate) {
       addLog(`Out of tokens. Each generation uses ${generationCost} tokens — upgrade your plan.`, 'error');
-      navigate('/upgrade', { state: { reason: 'tokens' } });
-      return;
-    }
-    if (!(await consumeTokens())) {
-      addLog(`Out of tokens. Upgrade to continue generating.`, 'error');
       navigate('/upgrade', { state: { reason: 'tokens' } });
       return;
     }
@@ -181,9 +214,8 @@ export function StudioPage() {
         addLog('Writing image prompt (Gemini Flash Lite)…', 'warn');
         addLog('Rendering atmosphere with gemini-3.1-flash-lite-image…', 'warn');
 
-        const atmoRes = await fetch('/api/generate-atmosphere', {
+        const atmoRes = await apiFetch('/api/generate-atmosphere', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ input: settingInput })
         });
         const atmoData = await atmoRes.json();
@@ -210,9 +242,8 @@ export function StudioPage() {
 
       setAppState('GENERATING_PROMPT');
       addLog('Requesting Gemini Flash prompt translation...', 'warn');
-      const promptRes = await fetch('/api/generate-prompt', {
+      const promptRes = await apiFetch('/api/generate-prompt', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ productDesc: product.description, atmosphereDesc, productImages, atmosphereImages })
       });
       const promptData = await promptRes.json();
@@ -225,9 +256,8 @@ export function StudioPage() {
       addLog('Initializing Omni Video Generation pipeline...');
       addLog('Transmitting payloads to Omni...', 'warn');
 
-      const videoRes = await fetch('/api/generate-video', {
+      const videoRes = await apiFetch('/api/generate-video', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: generatedPrompt, productImages, atmosphereImages })
       });
       const videoData = await videoRes.json();
@@ -238,6 +268,7 @@ export function StudioPage() {
     } catch (e: any) {
       setAppState('IDLE');
       addLog(`Error: ${e.message}`, 'error');
+      void refreshSession();
     }
   };
 
@@ -253,11 +284,6 @@ export function StudioPage() {
       navigate('/upgrade', { state: { reason: 'tokens' } });
       return;
     }
-    if (!(await consumeTokens())) {
-      addLog(`Out of tokens. Upgrade to continue generating.`, 'error');
-      navigate('/upgrade', { state: { reason: 'tokens' } });
-      return;
-    }
     const instructions = editText.trim();
     const fromLabel = selected.label;
     const fromInteractionId = selected.interactionId;
@@ -269,9 +295,8 @@ export function StudioPage() {
     addLog('Transmitting edit to Omni...', 'warn');
 
     try {
-      const res = await fetch('/api/edit-video', {
+      const res = await apiFetch('/api/edit-video', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ previousInteractionId: fromInteractionId, instructions })
       });
       const data = await res.json();
@@ -282,6 +307,7 @@ export function StudioPage() {
     } catch (e: any) {
       setAppState('VIDEO_READY');
       addLog(`Edit failed: ${e.message}`, 'error');
+      void refreshSession();
     }
   };
 
@@ -297,9 +323,16 @@ export function StudioPage() {
   const downloadVideo = async (version: VideoVersion) => {
     setDownloading(true);
     try {
-      const res = await fetch(version.videoUrl, { credentials: 'include' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
+      let blob: Blob;
+      if (version.videoUrl.startsWith('blob:')) {
+        const res = await fetch(version.videoUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        blob = await res.blob();
+      } else {
+        const res = await apiFetch(version.videoUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        blob = await res.blob();
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -317,7 +350,7 @@ export function StudioPage() {
 
   return (
     <div className="app-shell md:h-screen w-full flex flex-col md:overflow-hidden font-sans text-snow">
-      <SeoHead page="studio" title="Studio | Product Studio" path="/studio" />
+      <SeoHead page="studio" title="Studio | Product Studio" path="/studio" noindex={!!user} />
 
       {/* TOP HEADER */}
       <AppHeader />

@@ -1,15 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { AppHeader } from '../components/AppHeader';
+import { useAuth } from '../auth/AuthContext';
 import { getPlanById, parseBilling, planPrice } from '../data/plans';
 import { loadCheckoutDraft } from '../lib/checkoutDraft';
 import { convertFromUsd } from '../lib/fx';
-import {
-  formatMoney,
-  getFiscalForCountry,
-  toMinorUnits,
-} from '../data/taxCurrency';
+import { apiFetch, edgeFetch } from '../lib/api';
+import { formatMoney, getFiscalForCountry } from '../data/taxCurrency';
 import {
   generateTxnId,
   saveTransactionResult,
@@ -37,12 +35,39 @@ interface Totals {
   exchangeRate: number;
 }
 
+async function createRazorpayOrder(body: Record<string, unknown>) {
+  const payload = JSON.stringify(body);
+
+  try {
+    const edgeRes = await edgeFetch('create-razorpay-order', {
+      method: 'POST',
+      body: payload,
+    });
+    const edgeData = await edgeRes.json();
+    if (edgeRes.ok) return edgeData;
+  } catch {
+    // Fall through to Express
+  }
+
+  const orderRes = await apiFetch('/api/razorpay/create-order', {
+    method: 'POST',
+    body: payload,
+  });
+  const orderData = await orderRes.json();
+  if (!orderRes.ok) {
+    throw new Error(orderData.error || 'Failed to start Razorpay checkout.');
+  }
+  return orderData;
+}
+
 export function FinalSummaryPage() {
   const { planId } = useParams();
   const [searchParams] = useSearchParams();
   const billing = parseBilling(searchParams.get('billing'));
   const plan = getPlanById(planId);
   const navigate = useNavigate();
+  const location = useLocation();
+  const { user, authReady, confirmPayment } = useAuth();
 
   const draft = loadCheckoutDraft();
   const [totals, setTotals] = useState<Totals | null>(null);
@@ -76,8 +101,8 @@ export function FinalSummaryPage() {
         if (!cancelled) {
           setTotals({ planAmount, taxAmount, total, exchangeRate });
         }
-      } catch {
-        if (!cancelled) setError('Could not load exchange rates.');
+      } catch (err: any) {
+        if (!cancelled) setError(err?.message || 'Could not load exchange rates.');
       } finally {
         if (!cancelled) setLoadingFx(false);
       }
@@ -88,17 +113,27 @@ export function FinalSummaryPage() {
     };
   }, [plan, addressOk, fiscal?.currency, usdPrice]);
 
+  if (!authReady) return null;
+  if (!user) {
+    return (
+      <Navigate
+        to="/signin"
+        replace
+        state={{ from: `${location.pathname}${location.search}` }}
+      />
+    );
+  }
   if (!plan) return <Navigate to="/upgrade" replace />;
   if (!addressOk || !draft) {
     return <Navigate to={`/order-summary/${planId}?billing=${billing}`} replace />;
   }
 
-  const goToTransaction = (status: 'success' | 'failed', message?: string) => {
+  const goToTransaction = (status: 'success' | 'failed', message?: string, txnId?: string) => {
     if (!totals || !fiscal) return;
-    const txnId = generateTxnId();
+    const id = txnId || generateTxnId();
     const result: TransactionResult = {
       status,
-      txnId,
+      txnId: id,
       planName: plan.name,
       planId: plan.id,
       billing,
@@ -108,7 +143,7 @@ export function FinalSummaryPage() {
     };
     saveTransactionResult(result);
     setPaying(false);
-    navigate(`/transaction-summary/${txnId}`, { replace: true, state: result });
+    navigate(`/transaction-summary/${id}`, { replace: true, state: result });
   };
 
   const onPay = async () => {
@@ -116,29 +151,19 @@ export function FinalSummaryPage() {
     setError(null);
     setPaying(true);
     try {
-      const orderRes = await fetch('/api/razorpay/create-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          planId: plan.id,
-          billing,
-          billingAddress: draft.address,
-          currency: fiscal.currency,
-          amountMinor: toMinorUnits(totals.total, fiscal.currency),
-          planAmountMajor: totals.planAmount,
-          taxAmountMajor: totals.taxAmount,
-          totalMajor: totals.total,
-        }),
+      // Server computes pricing authority — do not send amountMinor/tax from client.
+      const orderData = await createRazorpayOrder({
+        planId: plan.id,
+        billing,
+        billingAddress: draft.address,
       });
-      const orderData = await orderRes.json();
-      if (!orderRes.ok) {
-        throw new Error(orderData.error || 'Failed to start Razorpay checkout.');
-      }
 
       const scriptReady = await loadRazorpayScript();
       if (!scriptReady || !window.Razorpay) {
         throw new Error('Could not load Razorpay payment gateway.');
       }
+
+      const amountLabel = formatMoney(totals.total, fiscal);
 
       const rzp = new window.Razorpay({
         key: orderData.keyId,
@@ -152,8 +177,25 @@ export function FinalSummaryPage() {
           email: draft.address.email,
         },
         theme: { color: '#2dd4bf' },
-        handler: () => {
-          goToTransaction('success');
+        handler: (response) => {
+          void (async () => {
+            try {
+              const { txnCode } = await confirmPayment({
+                planId: plan.id,
+                billing,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                amountLabel,
+              });
+              goToTransaction('success', undefined, txnCode);
+            } catch (err: any) {
+              goToTransaction(
+                'failed',
+                err?.message || 'Payment could not be confirmed.'
+              );
+            }
+          })();
         },
         modal: {
           ondismiss: () => setPaying(false),

@@ -19,6 +19,8 @@ export interface UploadResult {
   path: string;
   signedUrl: string;
   asset: MediaAssetRow | null;
+  /** Present when storage succeeded but media_assets insert failed. */
+  metaWarning?: string;
 }
 
 /** Upload a file to the user's folder in a private bucket and record metadata. */
@@ -51,6 +53,7 @@ export async function uploadUserMedia(
     throw new Error(signError?.message || 'Could not create signed URL.');
   }
 
+  // Do not persist the signed URL as a permanent public_url — path only.
   const { data: asset, error: metaError } = await supabase
     .from('media_assets')
     .insert({
@@ -59,14 +62,15 @@ export async function uploadUserMedia(
       path,
       mime_type: file.type || null,
       kind,
-      public_url: signed.signedUrl,
+      public_url: null,
     })
     .select()
     .single();
 
+  let metaWarning: string | undefined;
   if (metaError) {
-    // File is already stored — surface soft failure on metadata only
-    console.warn('media_assets insert failed:', metaError.message);
+    metaWarning = `Media uploaded, but metadata save failed: ${metaError.message}`;
+    console.warn(metaWarning);
   }
 
   return {
@@ -74,6 +78,7 @@ export async function uploadUserMedia(
     path,
     signedUrl: signed.signedUrl,
     asset: asset ?? null,
+    metaWarning,
   };
 }
 

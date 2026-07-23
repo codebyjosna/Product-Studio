@@ -8,6 +8,7 @@ import { clearCheckoutDraft } from '../lib/checkoutDraft';
 import { normalizePlanId } from '../auth/types';
 import { recordTransaction } from '../auth/profile';
 
+
 export type TxnStatus = 'success' | 'failed';
 
 export interface TransactionResult {
@@ -50,7 +51,7 @@ export function TransactionSummaryPage() {
   const { txnId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, setPlan } = useAuth();
+  const { user, refreshSession } = useAuth();
 
   const result = useMemo(() => {
     const fromState = location.state as TransactionResult | null;
@@ -60,24 +61,10 @@ export function TransactionSummaryPage() {
   }, [location.state, txnId]);
 
   useEffect(() => {
+    // Plan is already applied server-side on confirm — only refresh session / soft-note failures.
     if (result?.status === 'success' && user) {
       clearCheckoutDraft();
-      const plan = normalizePlanId(result.planId);
-      void (async () => {
-        try {
-          await setPlan(plan);
-          await recordTransaction({
-            txnCode: result.txnId,
-            planId: plan,
-            billing: result.billing,
-            amountLabel: result.amountLabel,
-            status: 'success',
-            message: result.message,
-          });
-        } catch (err) {
-          console.error('Failed to apply plan / record transaction:', err);
-        }
-      })();
+      void refreshSession();
     } else if (result?.status === 'failed' && user) {
       void recordTransaction({
         txnCode: result.txnId,
@@ -88,7 +75,16 @@ export function TransactionSummaryPage() {
         message: result.message,
       }).catch(() => undefined);
     }
-  }, [result?.status, result?.planId, result?.txnId, result?.billing, result?.amountLabel, result?.message, user, setPlan]);
+  }, [
+    result?.status,
+    result?.planId,
+    result?.txnId,
+    result?.billing,
+    result?.amountLabel,
+    result?.message,
+    user,
+    refreshSession,
+  ]);
 
   if (!txnId || !result) {
     return <Navigate to="/" replace />;

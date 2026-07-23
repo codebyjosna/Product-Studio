@@ -13,52 +13,14 @@ function json(body: unknown, status = 200) {
   })
 }
 
+/** Locked: unpaid plan grants are no longer allowed. Use confirm-razorpay-payment. */
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-
-  try {
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return json({ error: 'Unauthorized' }, 401)
-    }
-
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    })
-    const {
-      data: { user },
-      error: userError,
-    } = await userClient.auth.getUser()
-    if (userError || !user) return json({ error: 'Unauthorized' }, 401)
-
-    const { planId } = await req.json()
-    const normalized =
-      planId === 'starter' || planId === 'pro' || planId === 'enterprise' ? planId : null
-    if (!normalized) return json({ error: 'Invalid plan.' }, 400)
-
-    const admin = createClient(supabaseUrl, serviceKey)
-    const { data, error } = await admin.rpc('apply_plan', {
-      p_user_id: user.id,
-      p_plan_id: normalized,
-    })
-    if (error) return json({ error: error.message }, 500)
-
-    const row = Array.isArray(data) ? data[0] : data
-    return json({
-      session: {
-        userId: row.id,
-        name: row.name,
-        email: row.email,
-        planId: row.plan_id,
-        tokens: row.tokens,
-      },
-    })
-  } catch (e) {
-    return json({ error: e instanceof Error ? e.message : 'Failed to apply plan' }, 500)
-  }
+  return json(
+    {
+      error:
+        'Direct plan upgrades are disabled. Complete Razorpay checkout; the app calls confirm-razorpay-payment after a verified payment.',
+    },
+    403,
+  )
 })

@@ -6,7 +6,10 @@ frontend:
         - npm ci
     build:
       commands:
-        - npm run build
+        # Client-only for Amplify Hosting. Express is NOT hosted here.
+        # Set Amplify env VITE_API_URL to your Node API host for generation.
+        # Checkout uses Supabase Edge Functions (create/confirm Razorpay).
+        - npm run build:web
   artifacts:
     baseDirectory: dist
     files:
@@ -15,7 +18,7 @@ frontend:
     paths:
       - node_modules/**/*
       - .npm/**/*
-  customRules:
-    - source: </^[^.]+$|\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|webp|xml|webmanifest)$)([^.]+$)/>
-      target: /index.html
-      status: '200'
+customRules:
+  - source: '/<*>'
+    target: '/index.html'
+    status: '200'

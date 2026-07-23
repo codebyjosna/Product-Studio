@@ -68,6 +68,10 @@ export async function getUsdRates(): Promise<Record<string, number>> {
 
 export async function convertFromUsd(amountUsd: number, currency: string): Promise<number> {
   const rates = await getUsdRates();
-  const rate = rates[currency] ?? FALLBACK_USD_RATES[currency] ?? 1;
+  const code = currency.toUpperCase();
+  const rate = rates[code] ?? FALLBACK_USD_RATES[code];
+  if (rate == null || !Number.isFinite(rate) || rate <= 0) {
+    throw new Error(`FX rate unavailable for ${code}`);
+  }
   return amountUsd * rate;
 }

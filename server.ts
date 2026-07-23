@@ -4,12 +4,66 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import {
-  applyPlanForUser,
+  getSupabaseAdmin,
   isSupabaseServerConfigured,
-  normalizePlanId,
   requireAuth,
   type AuthedRequest,
 } from './server/supabase';
+import {
+  confirmRazorpayAndApplyPlan,
+  consumeTokensForUser,
+  createVerifiedRazorpayOrder,
+  refundTokensForUser,
+} from './server/billing';
+
+const TOKENS_PER_GENERATION = 10;
+const ownedFiles = new Map<string, Set<string>>(); // userId -> Gemini fileIds
+const ownedInteractions = new Map<string, Set<string>>();
+
+function rememberOwnership(userId: string, fileId: string | null, interactionId?: string | null) {
+  if (fileId) {
+    if (!ownedFiles.has(userId)) ownedFiles.set(userId, new Set());
+    ownedFiles.get(userId)!.add(fileId);
+    void (async () => {
+      try {
+        await getSupabaseAdmin()
+          .from('generation_files')
+          .upsert({ file_id: fileId, user_id: userId, interaction_id: interactionId ?? null });
+      } catch {
+        /* ignore ownership persist errors */
+      }
+    })();
+  }
+  if (interactionId) {
+    if (!ownedInteractions.has(userId)) ownedInteractions.set(userId, new Set());
+    ownedInteractions.get(userId)!.add(interactionId);
+  }
+}
+
+async function userOwnsFile(userId: string, fileId: string): Promise<boolean> {
+  if (ownedFiles.get(userId)?.has(fileId)) return true;
+  try {
+    const { data } = await getSupabaseAdmin()
+      .from('generation_files')
+      .select('file_id')
+      .eq('file_id', fileId)
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (data) {
+      rememberOwnership(userId, fileId, null);
+      return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+function safeClientError(e: unknown, fallback: string) {
+  const msg = e instanceof Error ? e.message : fallback;
+  if (/insufficient_tokens/i.test(msg)) return 'Insufficient tokens.';
+  return fallback;
+}
 
 // Load local env files (.env.local takes precedence over .env).
 // In AI Studio these vars are injected at runtime, so this is a no-op there.
@@ -121,10 +175,10 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: '50mb' }));
+  app.use(express.json({ limit: '20mb' }));
 
   // Endpoint to generate prompt
-  app.post('/api/generate-prompt', async (req, res) => {
+  app.post('/api/generate-prompt', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const { productDesc, atmosphereDesc, productImages = [], atmosphereImages = [] }: GenerateBody = req.body;
       const ai = getAiClient();
@@ -207,13 +261,13 @@ Materials and physics: <how light and matter behave securely>. Audio: near-silen
       res.json({ prompt: response.text });
     } catch (e: any) {
       console.error('Error generating prompt:', e);
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: safeClientError(e, 'Failed to generate prompt.') });
     }
   });
 
   // Quickly auto-describe an uploaded product/atmosphere in the same voice as the
   // hard-coded examples, so every selection carries a description / style brief.
-  app.post('/api/describe', async (req, res) => {
+  app.post('/api/describe', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const { type, images = [] }: { type?: 'product' | 'atmosphere'; images?: InlineImage[] } = req.body;
       if (images.length === 0) {
@@ -253,7 +307,7 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
       res.json({ description: (response.text || '').trim() });
     } catch (e: any) {
       console.error('Error describing image:', e);
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: safeClientError(e, 'Failed to describe image.') });
     }
   });
 
@@ -263,7 +317,8 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
   // Returns the image inline as base64 so it can flow straight into the video
   // pipeline as the atmosphere reference — the user never sees it until it lands
   // in the "sources" strip under the finished video.
-  app.post('/api/generate-atmosphere', async (req, res) => {
+  app.post('/api/generate-atmosphere', requireAuth, async (req: AuthedRequest, res) => {
+    // Charged as part of video submit via generate-video; atmosphere step is included.
     try {
       const { input }: { input?: string } = req.body;
       if (!input || !input.trim()) {
@@ -307,13 +362,17 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
       res.json({ image: { data, mimeType }, prompt: imagePrompt });
     } catch (e: any) {
       console.error('Error generating atmosphere:', e);
-      res.status(500).json({ error: e?.body || e.message });
+      res.status(500).json({ error: safeClientError(e, 'Failed to generate atmosphere.') });
     }
   });
 
   // Endpoint to start omni generation
-  app.post('/api/generate-video', async (req, res) => {
+  app.post('/api/generate-video', requireAuth, async (req: AuthedRequest, res) => {
+    const userId = req.authUser!.id;
+    let charged = false;
     try {
+      await consumeTokensForUser(userId, TOKENS_PER_GENERATION);
+      charged = true;
       const { prompt, productImages = [], atmosphereImages = [] }: GenerateBody & { prompt?: string } = req.body;
       const ai = getAiClient();
 
@@ -343,24 +402,34 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
       
       const fileIdMatch = interaction.output_video.uri.match(/files\/([a-zA-Z0-9_-]+)/);
       const fileId = fileIdMatch ? fileIdMatch[1] : null;
+      rememberOwnership(userId, fileId, interaction.id);
 
       res.json({ interactionId: interaction.id, uri: interaction.output_video.uri, fileId });
     } catch (e: any) {
+      if (charged) await refundTokensForUser(userId, TOKENS_PER_GENERATION);
       console.error('Error generating video:', e);
-      // Try to dump error details closely
-      res.status(500).json({ error: e?.body || e.message });
+      const status = e?.status || 500;
+      res.status(status).json({ error: safeClientError(e, 'Failed to generate video.') });
     }
   });
 
   // Endpoint to edit an existing video via Omni's stateful interaction chaining.
   // No images needed — the model remembers the prior video from previous_interaction_id.
-  app.post('/api/edit-video', async (req, res) => {
+  app.post('/api/edit-video', requireAuth, async (req: AuthedRequest, res) => {
+    const userId = req.authUser!.id;
+    let charged = false;
     try {
       const { previousInteractionId, instructions }: { previousInteractionId?: string; instructions?: string } = req.body;
       if (!previousInteractionId || !instructions) {
         res.status(400).json({ error: 'previousInteractionId and instructions are required' });
         return;
       }
+      if (!ownedInteractions.get(userId)?.has(previousInteractionId)) {
+        res.status(403).json({ error: 'You do not own this video interaction.' });
+        return;
+      }
+      await consumeTokensForUser(userId, TOKENS_PER_GENERATION);
+      charged = true;
       const ai = getAiClient();
 
       console.log(`Editing interaction ${previousInteractionId}...`);
@@ -380,18 +449,25 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
 
       const fileIdMatch = interaction.output_video.uri.match(/files\/([a-zA-Z0-9_-]+)/);
       const fileId = fileIdMatch ? fileIdMatch[1] : null;
+      rememberOwnership(userId, fileId, interaction.id);
 
       res.json({ interactionId: interaction.id, uri: interaction.output_video.uri, fileId });
     } catch (e: any) {
+      if (charged) await refundTokensForUser(userId, TOKENS_PER_GENERATION);
       console.error('Error editing video:', e);
-      res.status(500).json({ error: e?.body || e.message });
+      const status = e?.status || 500;
+      res.status(status).json({ error: safeClientError(e, 'Failed to edit video.') });
     }
   });
 
   // Endpoint to poll file status
-  app.get('/api/file-status/:fileId', async (req, res) => {
+  app.get('/api/file-status/:fileId', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const { fileId } = req.params;
+      const userId = req.authUser!.id;
+      if (!(await userOwnsFile(userId, fileId))) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
       const ai = getAiClient();
       
       const fInfo = await ai.files.get({ name: `files/${fileId}` });
@@ -399,7 +475,7 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
       res.json({ state });
     } catch (e: any) {
       console.error('Error getting file status:', e);
-      res.status(500).json({ error: e.message });
+      res.status(500).json({ error: 'Failed to get file status.' });
     }
   });
 
@@ -409,9 +485,13 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
 
   // Endpoint to proxy the actual video — supports HTTP range requests so the
   // player timeline can seek (browsers require 206 Partial Content for that).
-  app.get('/api/video/:fileId', async (req, res) => {
+  app.get('/api/video/:fileId', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const { fileId } = req.params;
+      const userId = req.authUser!.id;
+      if (!(await userOwnsFile(userId, fileId))) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
 
       let buffer = videoCache.get(fileId);
       if (!buffer) {
@@ -455,13 +535,17 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
       }
     } catch (e: any) {
       console.error('Error streaming video:', e);
-      res.status(500).send(e.message);
+      res.status(500).send('Failed to stream video.');
     }
   });
 
   // User provided endpoints for gemini-3.1-flash-lite-image and gemini-3.1-flash-lite
-  app.post("/api/generate", async (req, res) => {
+  app.post("/api/generate", requireAuth, async (req: AuthedRequest, res) => {
+    const userId = req.authUser!.id;
+    let charged = false;
     try {
+      await consumeTokensForUser(userId, TOKENS_PER_GENERATION);
+      charged = true;
       const { prompt } = req.body;
       const ai = getAiClient();
       const textResponse = await ai.models.generateContent({
@@ -489,17 +573,23 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
       const responseData = JSON.parse(rawText);
       res.json(responseData);
     } catch (error: any) {
+      if (charged) await refundTokensForUser(userId, TOKENS_PER_GENERATION);
       console.error(error);
-      res.status(500).json({ error: "Failed to generate text content." });
+      const status = error?.status || 500;
+      res.status(status).json({ error: safeClientError(error, 'Failed to generate text content.') });
     }
   });
 
-  app.post("/api/generate-image", async (req, res) => {
+  app.post("/api/generate-image", requireAuth, async (req: AuthedRequest, res) => {
+    const userId = req.authUser!.id;
+    let charged = false;
     try {
       const { prompt, imageBase64, type } = req.body;
       if (!prompt) {
         return res.status(400).json({ error: "Prompt is required" });
       }
+      await consumeTokensForUser(userId, TOKENS_PER_GENERATION);
+      charged = true;
       const ai = getAiClient();
 
       let prefix = "Strictly professional, elegant, highly detailed color photography. High-resolution, cinematic lighting, realistic vibrant colors, crisp focus. Single cohesive image, no text inside the image, no grid layout, no multiple panels. ";
@@ -541,11 +631,14 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
       if (base64EncodeString) {
         res.json({ imageUrl: `data:image/jpeg;base64,${base64EncodeString}` });
       } else {
+        if (charged) await refundTokensForUser(userId, TOKENS_PER_GENERATION);
         res.status(500).json({ error: "No image generated" });
       }
     } catch (error: any) {
+      if (charged) await refundTokensForUser(userId, TOKENS_PER_GENERATION);
       console.error("Error generating image:", error);
-      res.status(500).json({ error: error.message || "Failed to generate image" });
+      const status = error?.status || 500;
+      res.status(status).json({ error: safeClientError(error, 'Failed to generate image') });
     }
   });
 
@@ -561,31 +654,34 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
     res.json({ configured: isSupabaseServerConfigured() });
   });
 
-  app.post('/api/billing/apply-plan', requireAuth, async (req: AuthedRequest, res) => {
+  app.post('/api/billing/apply-plan', requireAuth, async (_req: AuthedRequest, res) => {
+    res.status(403).json({
+      error:
+        'Direct plan upgrades are disabled. Complete checkout; use POST /api/razorpay/confirm-payment after a verified Razorpay payment.',
+    });
+  });
+
+  app.post('/api/razorpay/confirm-payment', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const userId = req.authUser?.id;
       if (!userId) return res.status(401).json({ error: 'Unauthorized.' });
-
-      const planId = normalizePlanId(req.body?.planId);
-      if (planId === 'free') {
-        return res.status(400).json({ error: 'Invalid plan.' });
-      }
-
-      const session = await applyPlanForUser(userId, planId);
-      res.json({ session });
+      const result = await confirmRazorpayAndApplyPlan({
+        userId,
+        planId: String(req.body?.planId || ''),
+        billing: String(req.body?.billing || 'monthly'),
+        razorpayOrderId: String(req.body?.razorpay_order_id || ''),
+        razorpayPaymentId: String(req.body?.razorpay_payment_id || ''),
+        razorpaySignature: String(req.body?.razorpay_signature || ''),
+        amountLabel: req.body?.amountLabel ? String(req.body.amountLabel) : undefined,
+      });
+      res.json(result);
     } catch (error: any) {
-      console.error('apply-plan error:', error);
-      res.status(500).json({ error: error.message || 'Failed to apply plan.' });
+      console.error('confirm-payment error:', error);
+      res.status(error?.status || 500).json({ error: safeClientError(error, 'Failed to confirm payment.') });
     }
   });
 
   // ---- Razorpay ----
-  const RAZORPAY_PLAN_PRICES: Record<string, { monthly: number; name: string }> = {
-    starter: { monthly: 3, name: 'Starter' },
-    pro: { monthly: 10, name: 'Pro' },
-    enterprise: { monthly: 50, name: 'Enterprise' },
-  };
-
   app.get('/api/razorpay/config', (_req, res) => {
     const keyId = process.env.RAZORPAY_KEY_ID;
     if (!keyId) {
@@ -597,17 +693,12 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
     });
   });
 
-  app.post('/api/razorpay/create-order', async (req, res) => {
+  app.post('/api/razorpay/create-order', requireAuth, async (req: AuthedRequest, res) => {
     try {
-      const keyId = process.env.RAZORPAY_KEY_ID;
-      const keySecret = process.env.RAZORPAY_KEY_SECRET;
-      if (!keyId || !keySecret) {
-        return res.status(503).json({
-          error: 'Razorpay is not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.',
-        });
-      }
+      const userId = req.authUser?.id;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized.' });
 
-      const { planId, billing, billingAddress, currency, amountMinor, planAmountMajor, taxAmountMajor, totalMajor } = req.body as {
+      const { planId, billing, billingAddress } = req.body as {
         planId?: string;
         billing?: string;
         billingAddress?: {
@@ -619,65 +710,32 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
           pincode?: string;
           country?: string;
         };
-        currency?: string;
-        amountMinor?: number;
-        planAmountMajor?: number;
-        taxAmountMajor?: number;
-        totalMajor?: number;
       };
-      const plan = planId ? RAZORPAY_PLAN_PRICES[planId] : undefined;
-      if (!plan) {
-        return res.status(400).json({ error: 'Invalid plan selected.' });
+
+      const country = billingAddress?.country?.trim();
+      if (!planId || !country) {
+        return res.status(400).json({ error: 'planId and billing country are required.' });
       }
 
-      const isAnnual = billing === 'annual';
-      const orderCurrency = (currency || process.env.RAZORPAY_CURRENCY || 'INR').toUpperCase();
-      // Prefer client-computed total (FX + tax); fallback to simple major-unit price
-      let amount: number;
-      if (typeof amountMinor === 'number' && amountMinor > 0) {
-        amount = Math.round(amountMinor);
-      } else {
-        const amountMajor = isAnnual ? plan.monthly * 10 : plan.monthly;
-        amount = Math.round(amountMajor * 100);
-      }
-
-      const Razorpay = (await import('razorpay')).default;
-      const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
-
-      const order = await razorpay.orders.create({
-        amount,
-        currency: orderCurrency,
-        receipt: `ps_${planId}_${Date.now()}`.slice(0, 40),
-        notes: {
-          planId: planId!,
-          planName: plan.name,
-          billing: isAnnual ? 'annual' : 'monthly',
-          customerName: billingAddress?.name || '',
-          customerEmail: billingAddress?.email || '',
-          address: billingAddress?.fullAddress || '',
-          city: billingAddress?.city || '',
-          state: billingAddress?.state || '',
-          pincode: billingAddress?.pincode || '',
-          country: billingAddress?.country || '',
-          planAmount: String(planAmountMajor ?? ''),
-          taxAmount: String(taxAmountMajor ?? ''),
-          total: String(totalMajor ?? ''),
-        },
+      const order = await createVerifiedRazorpayOrder({
+        userId,
+        planId,
+        billing: billing === 'annual' ? 'annual' : 'monthly',
+        country,
+        billingAddress,
       });
-
-      res.json({
-        keyId,
-        orderId: order.id,
-        amount: order.amount,
-        currency: order.currency,
-        planName: plan.name,
-        billing: isAnnual ? 'annual' : 'monthly',
-      });
+      res.json(order);
     } catch (error: any) {
       console.error('Razorpay create-order error:', error);
-      res.status(500).json({ error: error?.error?.description || error.message || 'Failed to create payment order' });
+      res.status(error?.status || 500).json({
+        error: safeClientError(error, 'Failed to create payment order'),
+      });
     }
   });
+
+  // Cap JSON body size for non-upload routes; generation still needs large payloads
+  // but 20mb is enough for a few reference images.
+  // (limit already set above — keep moderate)
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

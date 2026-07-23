@@ -9,13 +9,14 @@ import {
 import { isSupabaseConfigured, getSupabase } from '../lib/supabase';
 import {
   completePasswordReset as completePasswordResetApi,
+  confirmPaymentAndApplyPlan,
+  type ConfirmRazorpayPaymentPayload,
   consumeUserTokens,
   fetchSessionFromAuth,
   getPendingReset,
   getPendingSignup,
   setPendingReset as persistPendingReset,
   setPendingSignup as persistPendingSignup,
-  setUserPlan,
   signInWithPassword,
   signOut as signOutApi,
   startPasswordReset as startPasswordResetApi,
@@ -38,8 +39,11 @@ interface AuthContextValue {
   startPasswordReset: (email: string) => Promise<{ email: string }>;
   verifyResetOtp: (otp: string, email?: string) => Promise<{ email: string }>;
   completePasswordReset: (newPassword: string) => Promise<AuthSession>;
-  setPlan: (planId: PlanId) => Promise<void>;
-  /** Deduct generation tokens. Returns false if insufficient / not signed in. */
+  /** Verify Razorpay payment server-side and apply the purchased plan. */
+  confirmPayment: (
+    payload: ConfirmRazorpayPaymentPayload
+  ) => Promise<{ session: AuthSession; txnCode: string; alreadyApplied?: boolean }>;
+  /** Deduct generation tokens. Returns false if insufficient / not signed in. Prefer server charging for generate routes. */
   consumeTokens: (cost?: number) => Promise<boolean>;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
@@ -172,9 +176,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session);
         return session;
       },
-      setPlan: async (planId) => {
-        const session = await setUserPlan(planId);
-        setUser(session);
+      confirmPayment: async (payload) => {
+        const result = await confirmPaymentAndApplyPlan(payload);
+        setUser(result.session);
+        return result;
       },
       consumeTokens: async (cost = TOKENS_PER_GENERATION) => {
         if (!user) return false;

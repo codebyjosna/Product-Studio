@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check } from 'lucide-react';
 import { AppHeader } from '../components/AppHeader';
 import { CountrySelect } from '../components/CountrySelect';
 import { getPlanById, parseBilling, planPrice } from '../data/plans';
 import { useAuth } from '../auth/AuthContext';
 import { saveCheckoutDraft } from '../lib/checkoutDraft';
+
 
 const fieldClass =
   'w-full bg-ink/70 border border-line text-fog px-3 py-3 font-mono text-sm rounded-lg focus:outline-none focus:ring-1 focus:ring-accent/60 focus:border-accent/40 placeholder:text-mist/40';
@@ -25,7 +26,8 @@ export function OrderSummaryPage() {
   const billing = parseBilling(searchParams.get('billing'));
   const plan = getPlanById(planId);
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const location = useLocation();
+  const { user, authReady } = useAuth();
   const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState(user?.name || '');
@@ -36,6 +38,16 @@ export function OrderSummaryPage() {
   const [pincode, setPincode] = useState('');
   const [country, setCountry] = useState('');
 
+  if (!authReady) return null;
+  if (!user) {
+    return (
+      <Navigate
+        to="/signin"
+        replace
+        state={{ from: `${location.pathname}${location.search}` }}
+      />
+    );
+  }
   if (!plan) {
     return <Navigate to="/upgrade" replace />;
   }

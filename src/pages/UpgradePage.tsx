@@ -3,7 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Check, Hexagon, Triangle, Circle } from 'lucide-react';
 import { AppHeader } from '../components/AppHeader';
 import { SeoHead } from '../components/SeoHead';
+import { useAuth } from '../auth/AuthContext';
 import { Billing, PLANS, Plan, planPrice } from '../data/plans';
+
 
 function PlanIcon({ type, popular }: { type: Plan['icon']; popular?: boolean }) {
   const color = popular ? 'text-[#c8f542]' : 'text-sky-400';
@@ -23,13 +25,19 @@ function PlanIcon({ type, popular }: { type: Plan['icon']; popular?: boolean }) 
 export function UpgradePage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
   const needsTokens = (location.state as { reason?: string } | null)?.reason === 'tokens';
   const [billing, setBilling] = useState<Billing>('monthly');
 
   const periodLabel = billing === 'monthly' ? '/ MO' : '/ YR';
 
   const selectPlan = (planId: string) => {
-    navigate(`/order-summary/${planId}?billing=${billing}`);
+    const next = `/order-summary/${planId}?billing=${billing}`;
+    if (!user) {
+      navigate('/signin', { state: { from: next } });
+      return;
+    }
+    navigate(next);
   };
 
   return (

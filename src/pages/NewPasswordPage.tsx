@@ -3,13 +3,14 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { AuthShell, AuthError, AuthLink, FieldLabel, PasswordInput } from '../components/AppHeader';
+import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 
 interface NewPasswordState {
   email?: string;
 }
 
 export function NewPasswordPage() {
-  const { completePasswordReset, pendingReset } = useAuth();
+  const { completePasswordReset, pendingReset, authReady } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const state = (location.state || {}) as NewPasswordState;
@@ -18,14 +19,51 @@ export function NewPasswordPage() {
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [recoveryAllowed, setRecoveryAllowed] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
 
   const email = state.email || pendingReset?.email;
 
   useEffect(() => {
-    if (!pendingReset?.otpVerified) {
-      navigate(pendingReset ? '/reset-otp' : '/reset-password', { replace: true });
-    }
-  }, [pendingReset, navigate]);
+    let cancelled = false;
+
+    const check = async () => {
+      if (!authReady) return;
+
+      if (pendingReset?.otpVerified) {
+        if (!cancelled) {
+          setRecoveryAllowed(true);
+          setCheckingSession(false);
+        }
+        return;
+      }
+
+      if (isSupabaseConfigured()) {
+        try {
+          const { data } = await getSupabase().auth.getSession();
+          if (data.session) {
+            if (!cancelled) {
+              setRecoveryAllowed(true);
+              setCheckingSession(false);
+            }
+            return;
+          }
+        } catch {
+          // fall through to redirect
+        }
+      }
+
+      if (!cancelled) {
+        setCheckingSession(false);
+        navigate(pendingReset ? '/reset-otp' : '/reset-password', { replace: true });
+      }
+    };
+
+    void check();
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, pendingReset, navigate]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,6 +82,16 @@ export function NewPasswordPage() {
       setLoading(false);
     }
   };
+
+  if (!authReady || checkingSession || !recoveryAllowed) {
+    return (
+      <AuthShell title="New password" subtitle="Preparing password reset…">
+        <div className="flex justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-accent" />
+        </div>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell

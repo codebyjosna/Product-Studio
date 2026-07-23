@@ -71,13 +71,20 @@ function StudioEntry() {
 }
 
 function HomeById() {
-  const { user } = useAuth();
+  const { user, authReady } = useAuth();
   const { userId } = useParams();
 
-  if (user) {
-    if (!userId || !UUID_RE.test(userId) || user.userId !== userId) {
-      return <Navigate to={`/${user.userId}`} replace />;
-    }
+  if (!authReady) {
+    return <PageSkeleton variant="studio" />;
+  }
+
+  // Guests must not open arbitrary UUID studio routes.
+  if (!user) {
+    return <Navigate to="/studio" replace />;
+  }
+
+  if (!userId || !UUID_RE.test(userId) || user.userId !== userId) {
+    return <Navigate to={`/${user.userId}`} replace />;
   }
 
   return <StudioPage />;
@@ -112,6 +119,7 @@ function RoutedApp({ location }: { location: ReturnType<typeof useLocation> }) {
 /** Skeleton loading stage on every route change. */
 export function NavigationShell() {
   const location = useLocation();
+  const { authReady } = useAuth();
   const [displayLocation, setDisplayLocation] = useState(location);
   const [showSkeleton, setShowSkeleton] = useState(false);
 
@@ -134,6 +142,10 @@ export function NavigationShell() {
   const variant = getSkeletonVariant(
     showSkeleton ? location.pathname : displayLocation.pathname
   );
+
+  if (!authReady) {
+    return <PageSkeleton variant={getSkeletonVariant(location.pathname)} />;
+  }
 
   if (showSkeleton) {
     return <PageSkeleton variant={variant} />;

@@ -6,8 +6,10 @@ Deployed functions (require user JWT `Authorization: Bearer <access_token>`):
 |----------|--------|---------|
 | `me` | GET | Return current profile session |
 | `consume-tokens` | POST `{ "cost": 10 }` | Deduct generation tokens |
-| `apply-plan` | POST `{ "planId": "starter\|pro\|enterprise" }` | Apply paid plan (service role) |
-| `update-fx-rates` | POST | Refresh `countries.fx_rate` from ExchangeRate-API (USD base). Cron: 01:00 & 13:00 UTC. Auth: service role Bearer or `x-cron-secret`. |
+| `apply-plan` | POST | **Disabled (403)** — use `confirm-razorpay-payment` |
+| `create-razorpay-order` | POST | Auth required; server-priced Razorpay order |
+| `confirm-razorpay-payment` | POST | Verify signature + apply plan |
+| `update-fx-rates` | POST | Refresh `countries.fx_rate` (cron 01:00 & 13:00 UTC) |
 
 Base URL:
 

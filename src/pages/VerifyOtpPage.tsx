@@ -99,8 +99,7 @@ export function VerifyOtpPage() {
     >
       <AuthError message={error} />
       <p className="mb-4 text-xs text-mist bg-panel-elevated/60 border border-line rounded-lg px-3 py-2">
-        Check your inbox for the Supabase verification code. Make sure your Auth email template includes{' '}
-        <code className="text-accent">{'{{ .Token }}'}</code>.
+        Check your inbox for the 6-digit verification code we sent you.
       </p>
       <form onSubmit={onSubmit} className="space-y-5">
         <div className="flex justify-between gap-2">

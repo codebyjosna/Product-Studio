@@ -8,7 +8,7 @@ export {
   getPendingReset,
   setPendingReset,
   consumeUserTokens,
-  setUserPlan as updateUserPlan,
+  confirmPaymentAndApplyPlan,
   fetchSessionFromAuth as getSession,
   signOut,
 } from './supabaseAuth';
