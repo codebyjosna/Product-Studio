@@ -4,6 +4,7 @@ import { Plus, X, Loader2 } from 'lucide-react';
 import { SuggestionChip, MediaSelection } from '../data.js';
 import { fileToDownscaledDataUrl } from '../images.js';
 import { useAuth } from '../auth/AuthContext';
+import { uploadUserMedia } from '../lib/mediaStorage';
 
 interface ImageUploaderProps {
   title: string;
@@ -34,13 +35,13 @@ export function ImageUploader({
     navigate('/signin', { state: { from: 'generate' } });
   };
 
-  const requireTokensOrUpgrade = () => {
+  const requireTokensOrUpgrade = async () => {
     if (!canGenerate) {
       setError(`Out of tokens. Each generation uses ${generationCost} tokens.`);
       navigate('/upgrade', { state: { reason: 'tokens' } });
       return false;
     }
-    if (!consumeTokens()) {
+    if (!(await consumeTokens())) {
       setError('Out of tokens. Please upgrade your plan.');
       navigate('/upgrade', { state: { reason: 'tokens' } });
       return false;
@@ -63,7 +64,7 @@ export function ImageUploader({
       setError('Please write or select a prompt first.');
       return;
     }
-    if (!requireTokensOrUpgrade()) return;
+    if (!(await requireTokensOrUpgrade())) return;
 
     setGenerating(true);
     setError(null);
@@ -117,6 +118,12 @@ export function ImageUploader({
         description: `Uploaded reference photo`,
       });
       setError(null);
+
+      // Persist original file to Supabase Storage (non-blocking for studio UX)
+      const bucket = type === 'product' ? 'product-uploads' : 'atmosphere-uploads';
+      void uploadUserMedia(bucket, picked[0], type).catch((err) => {
+        console.warn('Supabase storage upload skipped:', err?.message || err);
+      });
     } catch (err: any) {
       setError('Failed to process uploaded file.');
     } finally {

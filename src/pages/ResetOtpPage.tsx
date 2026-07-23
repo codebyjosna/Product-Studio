@@ -18,7 +18,6 @@ export function ResetOtpPage() {
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [demoOtp] = useState(state.otp || '');
   const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
 
   const email = state.email || pendingReset?.email;
@@ -72,7 +71,7 @@ export function ResetOtpPage() {
     setError(null);
     setLoading(true);
     try {
-      const result = await verifyResetOtp(code);
+      const result = await verifyResetOtp(code, email);
       navigate('/new-password', {
         replace: true,
         state: { email: result.email },
@@ -102,11 +101,9 @@ export function ResetOtpPage() {
       subtitle={email ? `Enter the 6-digit code sent to ${email}` : 'Enter your 6-digit verification code'}
     >
       <AuthError message={error} />
-      {demoOtp && (
-        <p className="mb-4 text-xs font-mono text-accent/90 bg-accent/10 border border-accent/25 rounded-lg px-3 py-2">
-          Demo code: <span className="font-semibold tracking-widest">{demoOtp}</span>
-        </p>
-      )}
+      <p className="mb-4 text-xs text-mist bg-panel-elevated/60 border border-line rounded-lg px-3 py-2">
+        Enter the 6-digit recovery code from your email.
+      </p>
       <form onSubmit={onSubmit} className="space-y-5">
         <div className="flex justify-between gap-2">
           {digits.map((digit, index) => (

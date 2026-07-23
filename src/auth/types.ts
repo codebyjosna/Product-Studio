@@ -1,15 +1,5 @@
 export type PlanId = 'free' | 'starter' | 'pro' | 'enterprise';
 
-export interface AuthUser {
-  id: string;
-  name: string;
-  email: string;
-  passwordHash: string;
-  planId?: PlanId;
-  /** Remaining tokens. `null` = unlimited (Enterprise). */
-  tokens?: number | null;
-}
-
 export interface AuthSession {
   userId: string;
   name: string;
@@ -19,17 +9,15 @@ export interface AuthSession {
   tokens: number | null;
 }
 
+/** Lightweight pending signup (email confirmation via Supabase OTP). */
 export interface PendingSignup {
   name: string;
   email: string;
-  passwordHash: string;
-  otp: string;
   expiresAt: number;
 }
 
 export interface PendingReset {
   email: string;
-  otp: string;
   expiresAt: number;
   otpVerified?: boolean;
 }

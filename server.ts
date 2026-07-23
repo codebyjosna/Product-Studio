@@ -3,6 +3,13 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
+import {
+  applyPlanForUser,
+  isSupabaseServerConfigured,
+  normalizePlanId,
+  requireAuth,
+  type AuthedRequest,
+} from './server/supabase';
 
 // Load local env files (.env.local takes precedence over .env).
 // In AI Studio these vars are injected at runtime, so this is a no-op there.
@@ -539,6 +546,36 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
     } catch (error: any) {
       console.error("Error generating image:", error);
       res.status(500).json({ error: error.message || "Failed to generate image" });
+    }
+  });
+
+  // ---- Billing (Supabase profiles) ----
+  app.get('/api/billing/me', requireAuth, async (req: AuthedRequest, res) => {
+    if (!req.authSession) {
+      return res.status(404).json({ error: 'Profile not found.' });
+    }
+    res.json({ session: req.authSession, supabaseConfigured: true });
+  });
+
+  app.get('/api/health/supabase', (_req, res) => {
+    res.json({ configured: isSupabaseServerConfigured() });
+  });
+
+  app.post('/api/billing/apply-plan', requireAuth, async (req: AuthedRequest, res) => {
+    try {
+      const userId = req.authUser?.id;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized.' });
+
+      const planId = normalizePlanId(req.body?.planId);
+      if (planId === 'free') {
+        return res.status(400).json({ error: 'Invalid plan.' });
+      }
+
+      const session = await applyPlanForUser(userId, planId);
+      res.json({ session });
+    } catch (error: any) {
+      console.error('apply-plan error:', error);
+      res.status(500).json({ error: error.message || 'Failed to apply plan.' });
     }
   });
 

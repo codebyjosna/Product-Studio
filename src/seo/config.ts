@@ -43,7 +43,9 @@ export type SeoPageKey =
   | 'signup'
   | 'upgrade'
   | 'terms'
-  | 'privacy';
+  | 'privacy'
+  | 'refund'
+  | 'contact';
 
 export const PAGE_SEO: Record<
   SeoPageKey,
@@ -83,6 +85,18 @@ export const PAGE_SEO: Record<
     description:
       'How Product Studio collects, uses, and protects your data when you generate AI product videos.',
     path: '/privacy',
+  },
+  refund: {
+    title: 'Refund & Cancellation Policy | Codewix Studio',
+    description:
+      'Refund and cancellation terms for Codewix Studio Pro subscriptions and paid AI product video services.',
+    path: '/refund',
+  },
+  contact: {
+    title: 'Contact Us | Codewix Studio',
+    description:
+      'Contact Codewix Studio for support, billing, account help, partnerships, and feedback. Email info@codewix.in or call +91 9746109569.',
+    path: '/contact',
   },
 };
 

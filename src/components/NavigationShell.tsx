@@ -3,6 +3,9 @@ import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-do
 import { useAuth } from '../auth/AuthContext';
 import { PageSkeleton, getSkeletonVariant } from './PageSkeleton';
 
+const LandingPage = lazy(() =>
+  import('../pages/LandingPage').then((m) => ({ default: m.LandingPage }))
+);
 const StudioPage = lazy(() =>
   import('../pages/StudioPage').then((m) => ({ default: m.StudioPage }))
 );
@@ -42,6 +45,12 @@ const TermsPage = lazy(() =>
 const PrivacyPage = lazy(() =>
   import('../pages/LegalPages').then((m) => ({ default: m.PrivacyPage }))
 );
+const RefundPage = lazy(() =>
+  import('../pages/LegalPages').then((m) => ({ default: m.RefundPage }))
+);
+const ContactPage = lazy(() =>
+  import('../pages/LegalPages').then((m) => ({ default: m.ContactPage }))
+);
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -49,6 +58,10 @@ const UUID_RE =
 const MIN_SKELETON_MS = 450;
 
 function RootEntry() {
+  return <LandingPage />;
+}
+
+function StudioEntry() {
   const { user } = useAuth();
   if (user) return <Navigate to={`/${user.userId}`} replace />;
   return <StudioPage />;
@@ -71,6 +84,7 @@ function RoutedApp({ location }: { location: ReturnType<typeof useLocation> }) {
   return (
     <Routes location={location}>
       <Route path="/" element={<RootEntry />} />
+      <Route path="/studio" element={<StudioEntry />} />
       <Route path="/signin" element={<SignInPage />} />
       <Route path="/signup" element={<SignUpPage />} />
       <Route path="/verify-otp" element={<VerifyOtpPage />} />
@@ -83,6 +97,8 @@ function RoutedApp({ location }: { location: ReturnType<typeof useLocation> }) {
       <Route path="/transaction-summary/:txnId" element={<TransactionSummaryPage />} />
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/refund" element={<RefundPage />} />
+      <Route path="/contact" element={<ContactPage />} />
       <Route path="/:userId" element={<HomeById />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

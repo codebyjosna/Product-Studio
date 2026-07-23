@@ -20,9 +20,13 @@ export function SignUpPage() {
     setLoading(true);
     try {
       const result = await startSignUp(name, email, password);
+      if (result.session) {
+        navigate(`/${result.session.userId}`, { replace: true });
+        return;
+      }
       navigate('/verify-otp', {
         replace: true,
-        state: { email: result.email, otp: result.otp, mode: 'signup' },
+        state: { email: result.email, mode: 'signup' },
       });
     } catch (err: any) {
       setError(err.message || 'Sign up failed.');

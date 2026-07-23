@@ -1,9 +1,10 @@
 import React from 'react';
 
-export type SkeletonVariant = 'studio' | 'auth' | 'upgrade' | 'checkout' | 'pricing';
+export type SkeletonVariant = 'studio' | 'auth' | 'upgrade' | 'checkout' | 'pricing' | 'landing';
 
 export function getSkeletonVariant(pathname: string): SkeletonVariant {
-  if (pathname === '/' || /^\/[0-9a-f-]{36}$/i.test(pathname)) return 'studio';
+  if (pathname === '/') return 'landing';
+  if (pathname === '/studio' || /^\/[0-9a-f-]{36}$/i.test(pathname)) return 'studio';
   if (pathname.startsWith('/upgrade')) return 'upgrade';
   if (
     pathname.startsWith('/order-summary') ||
@@ -142,8 +143,35 @@ function CheckoutSkeleton() {
   );
 }
 
+function LandingSkeleton() {
+  return (
+    <div className="app-shell min-h-screen w-full flex flex-col">
+      <div className="h-14 md:h-16 px-6 md:px-10 flex items-center justify-between">
+        <Bone className="h-5 w-36" />
+        <Bone className="h-9 w-24 rounded-md" />
+      </div>
+      <div className="flex-1 px-6 md:px-10 pb-16 flex flex-col justify-end max-w-3xl">
+        <Bone className="h-3 w-40 mb-5" />
+        <Bone className="h-12 w-72 md:w-96 mb-4" />
+        <Bone className="h-4 w-full max-w-md mb-2" />
+        <Bone className="h-4 w-4/5 max-w-sm mb-8" />
+        <Bone className="h-11 w-40 rounded-lg" />
+      </div>
+      <div className="border-t border-line/80 px-6 md:px-10 py-8 flex justify-between">
+        <Bone className="h-4 w-32" />
+        <div className="flex gap-4">
+          <Bone className="h-4 w-36" />
+          <Bone className="h-4 w-28" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function PageSkeleton({ variant }: { variant: SkeletonVariant }) {
   switch (variant) {
+    case 'landing':
+      return <LandingSkeleton />;
     case 'studio':
       return <StudioSkeleton />;
     case 'upgrade':

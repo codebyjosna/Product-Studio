@@ -8,7 +8,6 @@ import { ScrollRow } from '../components/ScrollRow.js';
 import { toInlineImages, InlineImage } from '../images.js';
 import { AppHeader } from '../components/AppHeader.js';
 import { SeoHead } from '../components/SeoHead';
-import { SeoSection } from '../components/SeoSection';
 import { useAuth } from '../auth/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -153,7 +152,7 @@ export function StudioPage() {
       navigate('/upgrade', { state: { reason: 'tokens' } });
       return;
     }
-    if (!consumeTokens()) {
+    if (!(await consumeTokens())) {
       addLog(`Out of tokens. Upgrade to continue generating.`, 'error');
       navigate('/upgrade', { state: { reason: 'tokens' } });
       return;
@@ -254,7 +253,7 @@ export function StudioPage() {
       navigate('/upgrade', { state: { reason: 'tokens' } });
       return;
     }
-    if (!consumeTokens()) {
+    if (!(await consumeTokens())) {
       addLog(`Out of tokens. Upgrade to continue generating.`, 'error');
       navigate('/upgrade', { state: { reason: 'tokens' } });
       return;
@@ -317,15 +316,14 @@ export function StudioPage() {
   };
 
   return (
-    <div className="app-shell w-full flex flex-col font-sans text-snow">
-      <SeoHead page="home" />
+    <div className="app-shell md:h-screen w-full flex flex-col md:overflow-hidden font-sans text-snow">
+      <SeoHead page="home" title="Studio | Product Studio" path="/studio" />
 
-      <div id="studio-workspace" className="md:h-screen w-full flex flex-col md:overflow-hidden">
       {/* TOP HEADER */}
       <AppHeader />
 
       {/* MAIN */}
-      <div className="flex-1 flex flex-col md:flex-row md:overflow-hidden min-h-0">
+      <div id="studio-workspace" className="flex-1 flex flex-col md:flex-row md:overflow-hidden min-h-0">
 
         {/* LEFT - BUILDER */}
         <div className="w-full md:w-[480px] md:shrink-0 md:overflow-y-auto p-6 md:p-10 border-b md:border-b-0 md:border-r border-line/80 bg-panel/55 backdrop-blur-xl flex flex-col">
@@ -512,9 +510,6 @@ export function StudioPage() {
           )}
         </div>
       </div>
-      </div>
-
-      <SeoSection />
     </div>
   );
 }

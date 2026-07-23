@@ -6,7 +6,6 @@ import { AuthShell, AuthError, AuthLink } from '../components/AppHeader';
 
 interface OtpLocationState {
   email?: string;
-  otp?: string;
   mode?: 'signup' | 'reset';
 }
 
@@ -19,7 +18,6 @@ export function VerifyOtpPage() {
   const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [demoOtp] = useState(state.otp || '');
   const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
 
   const email = state.email || pendingSignup?.email;
@@ -50,7 +48,6 @@ export function VerifyOtpPage() {
       return;
     }
     if (cleaned.length > 1) {
-      // paste support
       const chars = cleaned.slice(0, 6).split('');
       const next = [...digits];
       for (let i = 0; i < chars.length; i++) next[i] = chars[i];
@@ -74,7 +71,7 @@ export function VerifyOtpPage() {
     setError(null);
     setLoading(true);
     try {
-      const session = await verifySignUpOtp(code);
+      const session = await verifySignUpOtp(code, email);
       navigate(`/${session.userId}`, { replace: true });
     } catch (err: any) {
       setError(err.message || 'Verification failed.');
@@ -101,11 +98,10 @@ export function VerifyOtpPage() {
       subtitle={email ? `Enter the 6-digit code sent to ${email}` : 'Enter your 6-digit verification code'}
     >
       <AuthError message={error} />
-      {demoOtp && (
-        <p className="mb-4 text-xs font-mono text-accent/90 bg-accent/10 border border-accent/25 rounded-lg px-3 py-2">
-          Demo code: <span className="font-semibold tracking-widest">{demoOtp}</span>
-        </p>
-      )}
+      <p className="mb-4 text-xs text-mist bg-panel-elevated/60 border border-line rounded-lg px-3 py-2">
+        Check your inbox for the Supabase verification code. Make sure your Auth email template includes{' '}
+        <code className="text-accent">{'{{ .Token }}'}</code>.
+      </p>
       <form onSubmit={onSubmit} className="space-y-5">
         <div className="flex justify-between gap-2">
           {digits.map((digit, index) => (
@@ -126,7 +122,7 @@ export function VerifyOtpPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 font-mono text-xs font-bold uppercase tracking-widest text-ink bg-accent hover:bg-accent-dim rounded-lg transition-colors disabled:opacity-50"
+          className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 text-sm font-semibold tracking-wide text-ink bg-accent hover:bg-accent-dim rounded-lg transition-colors disabled:opacity-50"
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           Verify & continue

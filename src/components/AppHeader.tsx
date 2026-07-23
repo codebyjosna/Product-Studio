@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronDown, Eye, EyeOff, FileText, LogOut, Shield, Sparkles, Coins } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, FileText, LogOut, Shield, Sparkles, Coins, Receipt, Mail } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { PLAN_LABELS, type PlanId } from '../auth/types';
 import { TOKENS_PER_GENERATION } from '../auth/tokens';
@@ -112,14 +112,21 @@ export function AppHeader() {
                   <Shield className="w-4 h-4" />
                   Privacy Policy
                 </button>
+                <button type="button" role="menuitem" onClick={() => go('/refund')} className={menuItemClass}>
+                  <Receipt className="w-4 h-4" />
+                  Refund &amp; Cancellation
+                </button>
+                <button type="button" role="menuitem" onClick={() => go('/contact')} className={menuItemClass}>
+                  <Mail className="w-4 h-4" />
+                  Contact Us
+                </button>
                 <div className="my-1 border-t border-line" />
                 <button
                   type="button"
                   role="menuitem"
                   onClick={() => {
                     closeMenu();
-                    signOut();
-                    navigate('/');
+                    void signOut().then(() => navigate('/'));
                   }}
                   className={menuItemClass}
                 >

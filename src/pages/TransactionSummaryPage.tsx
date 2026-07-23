@@ -6,6 +6,7 @@ import { AppHeader } from '../components/AppHeader';
 import { useAuth } from '../auth/AuthContext';
 import { clearCheckoutDraft } from '../lib/checkoutDraft';
 import { normalizePlanId } from '../auth/types';
+import { recordTransaction } from '../auth/profile';
 
 export type TxnStatus = 'success' | 'failed';
 
@@ -59,14 +60,35 @@ export function TransactionSummaryPage() {
   }, [location.state, txnId]);
 
   useEffect(() => {
-    if (result?.status === 'success') {
+    if (result?.status === 'success' && user) {
       clearCheckoutDraft();
-      if (user) {
-        const plan = normalizePlanId(result.planId);
-        setPlan(plan);
-      }
+      const plan = normalizePlanId(result.planId);
+      void (async () => {
+        try {
+          await setPlan(plan);
+          await recordTransaction({
+            txnCode: result.txnId,
+            planId: plan,
+            billing: result.billing,
+            amountLabel: result.amountLabel,
+            status: 'success',
+            message: result.message,
+          });
+        } catch (err) {
+          console.error('Failed to apply plan / record transaction:', err);
+        }
+      })();
+    } else if (result?.status === 'failed' && user) {
+      void recordTransaction({
+        txnCode: result.txnId,
+        planId: normalizePlanId(result.planId),
+        billing: result.billing,
+        amountLabel: result.amountLabel,
+        status: 'failed',
+        message: result.message,
+      }).catch(() => undefined);
     }
-  }, [result?.status, result?.planId, user, setPlan]);
+  }, [result?.status, result?.planId, result?.txnId, result?.billing, result?.amountLabel, result?.message, user, setPlan]);
 
   if (!txnId || !result) {
     return <Navigate to="/" replace />;

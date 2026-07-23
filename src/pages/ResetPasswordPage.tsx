@@ -19,7 +19,7 @@ export function ResetPasswordPage() {
       const result = await startPasswordReset(email);
       navigate('/reset-otp', {
         replace: true,
-        state: { email: result.email, otp: result.otp },
+        state: { email: result.email },
       });
     } catch (err: any) {
       setError(err.message || 'Could not start reset.');
