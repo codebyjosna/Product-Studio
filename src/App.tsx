@@ -286,16 +286,9 @@ export default function App() {
         {/* LEFT - BUILDER */}
         <div className="w-full md:w-[480px] md:shrink-0 md:overflow-y-auto p-6 md:p-10 border-b md:border-b-0 md:border-r border-line/80 bg-panel/55 backdrop-blur-xl flex flex-col">
           <header className="mb-10">
-            <div className="mb-3 inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.22em] text-accent">
-              <span className="h-1.5 w-1.5 rounded-sm bg-accent shadow-[0_0_12px_rgba(45,212,191,0.8)]" />
-              Live studio
-            </div>
-            <h1 className="text-2xl md:text-[1.85rem] font-extrabold tracking-tight text-snow whitespace-nowrap mb-2">
-              Omni <span className="text-mist font-semibold">Product Studio</span>
+            <h1 className="text-2xl md:text-[1.85rem] font-extrabold tracking-tight text-snow">
+              Product Studio
             </h1>
-            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-mist/90 leading-relaxed">
-              Turn static product images into a cinematic product shot
-            </p>
           </header>
 
           <ImageUploader
@@ -481,26 +474,6 @@ export default function App() {
           )}
         </div>
       </div>
-
-      {/* FOOTER — usage disclaimer */}
-      <footer className="shrink-0 border-t border-line/70 bg-ink/80 backdrop-blur-md px-6 md:px-10 py-3">
-        <div className="max-w-5xl space-y-1.5 text-xs leading-relaxed text-mist/80">
-          <p>
-            By using this feature, you confirm that you have the necessary rights to any content that you upload. Do not generate content that infringes on others’ intellectual property or privacy rights. Your use of this generative AI service is subject to our{' '}
-            <a
-              href="https://policies.google.com/terms/generative-ai/use-policy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline decoration-accent/40 underline-offset-2 hover:text-accent transition-colors"
-            >
-              Prohibited Use Policy
-            </a>.
-          </p>
-          <p>
-            Please note that uploads from Google Workspace may be used to develop and improve Google products and services in accordance with our terms.
-          </p>
-        </div>
-      </footer>
 
     </div>
   );
