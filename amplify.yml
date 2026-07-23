@@ -7,7 +7,8 @@ frontend:
     build:
       commands:
         # Client-only for Amplify Hosting. Express is NOT hosted here.
-        # Set Amplify env VITE_API_URL to your Node API host for generation.
+        # Production generation uses Supabase Edge `studio-api` (no VITE_API_URL needed).
+        # Optional: set VITE_API_URL to a Node host to bypass Edge.
         # Checkout uses Supabase Edge Functions (create/confirm Razorpay).
         - npm run build:web
   artifacts:

@@ -1,6 +1,6 @@
 import { getSupabase, isSupabaseConfigured } from './supabase';
 
-/** API base for Express (optional). Empty = same origin `/api`. */
+/** API base for Express (optional). Empty = same origin `/api` in local `npm run dev`. */
 export function getApiBase(): string {
   const fromEnv = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '');
   return fromEnv || '';
@@ -12,7 +12,53 @@ export async function getAccessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
+function isStudioGenerationPath(path: string): boolean {
+  return (
+    path.startsWith('/api/generate-') ||
+    path.startsWith('/api/edit-video') ||
+    path.startsWith('/api/file-status/') ||
+    path.startsWith('/api/video/') ||
+    path.startsWith('/api/describe')
+  );
+}
+
+/**
+ * On Amplify (static PROD build) there is no Express. Route generation to
+ * Supabase Edge `studio-api`. Local `npm run dev` keeps same-origin Express.
+ * Explicit `VITE_API_URL` always wins (dedicated Node host).
+ */
+function shouldUseStudioEdge(path: string): boolean {
+  if (getApiBase()) return false;
+  if (!isStudioGenerationPath(path)) return false;
+  return Boolean(import.meta.env.PROD);
+}
+
+async function studioEdgeFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, '');
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  if (!supabaseUrl || !anonKey) {
+    throw new Error('Supabase is not configured (needed for generation on this host).');
+  }
+
+  const token = await getAccessToken();
+  if (!token) throw new Error('Sign in required.');
+
+  const headers = new Headers(init.headers || {});
+  if (!headers.has('Content-Type') && init.body) {
+    headers.set('Content-Type', 'application/json');
+  }
+  headers.set('Authorization', `Bearer ${token}`);
+  headers.set('apikey', anonKey);
+  headers.set('x-studio-path', path);
+
+  return fetch(`${supabaseUrl}/functions/v1/studio-api`, { ...init, headers });
+}
+
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  if (shouldUseStudioEdge(path)) {
+    return studioEdgeFetch(path, init);
+  }
+
   const token = await getAccessToken();
   const headers = new Headers(init.headers || {});
   if (!headers.has('Content-Type') && init.body) {
@@ -41,7 +87,7 @@ export async function readApiJson<T = unknown>(res: Response): Promise<T> {
     throw new Error(
       base
         ? `Generation API at ${base} returned a web page instead of JSON. Check that the Node server is running and VITE_API_URL is correct.`
-        : 'Generation API is not available on this host (got HTML instead of JSON). Amplify only serves the frontend — deploy Express (npm run build:server && npm start) and set Amplify env VITE_API_URL to that server URL.'
+        : 'Generation API returned HTML instead of JSON. Redeploy after studio-api Edge is live, or set VITE_API_URL to a Node API host.'
     );
   }
 

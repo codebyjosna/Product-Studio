@@ -10,6 +10,7 @@ Deployed functions (require user JWT `Authorization: Bearer <access_token>`):
 | `create-razorpay-order` | POST | Auth required; server-priced Razorpay order |
 | `confirm-razorpay-payment` | POST | Verify signature + apply plan |
 | `update-fx-rates` | POST | Refresh `countries.fx_rate` (cron 01:00 & 13:00 UTC) |
+| `studio-api` | GET/POST | Gemini generation (atmosphere, image, prompt, video, file/video proxy). Client sends `x-studio-path` like `/api/generate-atmosphere`. |
 
 Base URL:
 

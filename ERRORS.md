@@ -16,7 +16,7 @@ All original audit findings were addressed in code/config except a few **operati
 | ERR-003 | FIXED | Checkout handler sends `payment_id` / `order_id` / `signature` to confirm API |
 | ERR-004 | FIXED | Order amount computed server-side from USD × FX × tax (Edge + Express) |
 | ERR-005 | FIXED | Gemini routes require auth; server charges tokens on video/image/edit |
-| ERR-006 | MITIGATED | Amplify builds client-only (`build:web`); billing via Edge; set `VITE_API_URL` for AI API host |
+| ERR-006 | FIXED | Amplify builds client-only; generation via Edge `studio-api` in PROD; optional `VITE_API_URL` for Node |
 | ERR-007 | FIXED | Server bundle → `server-build/` (not published in Amplify `dist`) |
 | ERR-008 | FIXED | Upgrade / order / final summary require sign-in |
 | ERR-009 | FIXED | Tokens charged on server after validation; refunded on generation failure |
@@ -68,7 +68,7 @@ All original audit findings were addressed in code/config except a few **operati
 
 ## Residuals (ops / assets)
 
-1. **Host Express (or equivalent) for Gemini** — Amplify static hosting cannot run `/api/generate-*`. Set `VITE_API_URL` to the Node host and deploy `npm run build:server` + `npm start` there.
+1. **Generation on Amplify** — Client PROD builds call Supabase Edge `studio-api` (no Express required). Optional: set `VITE_API_URL` to a Node host instead.
 2. **Supabase Auth Dashboard** — Site URL `https://www.codewix.in`, Redirect URLs `https://www.codewix.in/**` (no localhost in production).
 3. **OG image** — Replace SVG with PNG/JPG (~1200×630) at `/og-image.png` and update `OG_IMAGE_PATH`.
 4. **Edge secrets** — `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` must be set on Supabase for checkout Edge Functions.

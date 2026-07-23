@@ -374,6 +374,10 @@ allow_dynamic_registration = false
 [functions.update-fx-rates]
 verify_jwt = false
 
+# Gemini generation for Amplify (static) hosting — auth via Bearer in the function.
+[functions.studio-api]
+verify_jwt = true
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
