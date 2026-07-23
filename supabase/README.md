@@ -1,76 +1,70 @@
 # Supabase setup — Product Studio
 
-This app uses **Supabase** for:
+## Linked project
 
-| Layer | What |
-|-------|------|
-| **Auth** | Email + password, signup OTP, password-reset OTP |
-| **Database** | `profiles`, `transactions`, `media_assets` |
-| **Storage** | `product-uploads`, `atmosphere-uploads`, `generated-videos` |
+- **URL:** `https://cszskydtgrsocmtgteik.supabase.co`
+- **Migrations:** `001_init.sql`, `002_countries_fx.sql` (countries + USD base pricing), `003_fx_cron.sql`
+- **Edge Functions:** `me`, `consume-tokens`, `apply-plan`, `update-fx-rates`
 
-## 1. Create a project
+## Auth email OTP (Resend SMTP)
 
-1. Go to [https://supabase.com](https://supabase.com) → New project  
-2. Copy:
-   - **Project URL**
-   - **anon public** key  
-   - **service_role** key (server only — never ship to the browser)
+Custom SMTP is configured on the project Auth settings:
 
-## 2. Run the migration
+| Setting | Value |
+|---------|--------|
+| Host | `smtp.resend.com` |
+| Port | `465` |
+| User | `resend` |
+| Pass | Resend API key |
+| From | `info@codewix.in` |
+| Sender name | Product Studio |
+| OTP length | 6 digits |
 
-In Supabase Dashboard → **SQL Editor** → New query:
+Confirm signup / reset templates include `{{ .Token }}`.
 
-Paste and run the full contents of:
+**Required:** Verify the `codewix.in` domain (or your sender domain) in the [Resend dashboard](https://resend.com/domains). Until verified, Resend may reject sends from `info@codewix.in`. For testing only, you can temporarily use `beth.t@example.com` as the sender.
 
-`supabase/migrations/001_init.sql`
+## Local env
 
-That creates tables, RLS, RPCs (`consume_tokens`, `apply_plan`), storage buckets, and the signup profile trigger.
-
-## 3. Auth email settings (OTP)
-
-Dashboard → **Authentication** → **Providers** → Email:
-
-- Enable Email
-- Enable **Confirm email**
-
-Dashboard → **Authentication** → **Email Templates**:
-
-- **Confirm signup** and **Reset password** should include the 6-digit token:
-
-```html
-<p>Your code is: {{ .Token }}</p>
-```
-
-Also set **Site URL** and **Redirect URLs** to your app origin (e.g. `http://localhost:3000` and your Amplify URL).
-
-## 4. Environment variables
-
-Create `.env.local` in the project root:
+Copy values into `.env.local` (gitignored). Never commit service role / access tokens / DB password / Resend keys.
 
 ```env
-VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-VITE_SUPABASE_ANON_KEY=your_anon_key
-
-# Server (Express) — same URL + service role
-SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+VITE_SUPABASE_URL=https://cszskydtgrsocmtgteik.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon jwt>
+SUPABASE_URL=https://cszskydtgrsocmtgteik.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service_role jwt>
+GEMINI_API_KEY=<gemini key>
 ```
 
-Also keep your existing `GEMINI_API_KEY` / Razorpay vars.
-
-## 5. Verify
+## CLI commands
 
 ```bash
-npm run dev
+npx supabase login --token <SUPABASE_ACCESS_TOKEN>
+npx supabase link --project-ref cszskydtgrsocmtgteik
+npx supabase db push
+npx supabase functions deploy me
+npx supabase functions deploy consume-tokens
+npx supabase functions deploy apply-plan
+npx supabase functions deploy update-fx-rates --no-verify-jwt
+npx supabase secrets set EXCHANGE_RATE_API_KEY=... FX_CRON_SECRET=...
+node --env-file=.env.local scripts/schedule-fx-cron.mjs
 ```
 
-- Sign up → check email for OTP → verify  
-- Upload a product photo → object appears under Storage → `product-uploads/{userId}/...`  
-- Generate → token balance drops in `profiles.tokens`  
-- Successful Razorpay checkout → `/api/billing/apply-plan` updates plan via service role  
+## Countries / FX
 
-## Security notes
+- Table `public.countries`: `name`, `code_alpha2`, `code_alpha3`, `currency_code`, `fx_rate` (USD base)
+- `app_settings.base_pricing_usd`: plan prices in USD
+- Cron `update-fx-rates-1am-1pm`: `0 1,13 * * *` (01:00 & 13:00 UTC)
 
-- Clients **cannot** set `plan_id` / `tokens` directly (RLS + trigger).  
-- Plan upgrades go through Express `POST /api/billing/apply-plan` with the user JWT.  
-- Service role key stays on the server only.
+Dashboard → Authentication → Email Templates: include `{{ .Token }}` in Confirm signup / Reset password.
+
+## Edge Function URLs
+
+```
+https://cszskydtgrsocmtgteik.supabase.co/functions/v1/me
+https://cszskydtgrsocmtgteik.supabase.co/functions/v1/consume-tokens
+https://cszskydtgrsocmtgteik.supabase.co/functions/v1/apply-plan
+https://cszskydtgrsocmtgteik.supabase.co/functions/v1/update-fx-rates
+```
+
+Pass `Authorization: Bearer <user_access_token>` and `apikey: <anon_key>` for user functions. `update-fx-rates` uses service role or `x-cron-secret`.

@@ -68,6 +68,25 @@ export async function applyPlanViaApi(planId: PlanId): Promise<AuthSession> {
   const token = sessionData.session?.access_token;
   if (!token) throw new Error('Not signed in.');
 
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+  // Prefer Supabase Edge Function when configured; fall back to Express.
+  if (supabaseUrl && anonKey) {
+    const edgeRes = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/apply-plan`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        apikey: anonKey,
+      },
+      body: JSON.stringify({ planId }),
+    });
+    const edgeBody = await edgeRes.json();
+    if (edgeRes.ok && edgeBody.session) return edgeBody.session as AuthSession;
+    // If edge fails, try Express below
+  }
+
   const res = await fetch('/api/billing/apply-plan', {
     method: 'POST',
     headers: {
