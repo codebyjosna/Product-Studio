@@ -10,7 +10,7 @@ import { toInlineImages, InlineImage } from '../images.js';
 import { AppHeader } from '../components/AppHeader.js';
 import { SeoHead } from '../components/SeoHead';
 import { useAuth } from '../auth/AuthContext';
-import { apiFetch } from '../lib/api';
+import { apiFetch, readApiJson } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 
 type LogType = 'info' | 'success' | 'warn' | 'error';
@@ -166,7 +166,7 @@ export function StudioPage() {
     pollIntervalRef.current = setInterval(async () => {
       try {
         const res = await apiFetch(`/api/file-status/${fileId}`);
-        const data = await res.json();
+        const data = await readApiJson<{ state?: string }>(res);
 
         if (data.state === 'ACTIVE') {
           clearPoll();
@@ -252,7 +252,11 @@ export function StudioPage() {
           method: 'POST',
           body: JSON.stringify({ input: settingInput })
         });
-        const atmoData = await atmoRes.json();
+        const atmoData = await readApiJson<{
+          error?: string;
+          image?: { data: string; mimeType: string };
+          prompt?: string;
+        }>(atmoRes);
         if (!atmoRes.ok) throw new Error(atmoData.error || 'Failed to generate atmosphere');
 
         const atmoDataUrl = `data:${atmoData.image.mimeType};base64,${atmoData.image.data}`;
@@ -280,7 +284,7 @@ export function StudioPage() {
         method: 'POST',
         body: JSON.stringify({ productDesc: product.description, atmosphereDesc, productImages, atmosphereImages })
       });
-      const promptData = await promptRes.json();
+      const promptData = await readApiJson<{ error?: string; prompt?: string }>(promptRes);
       if (!promptRes.ok) throw new Error(promptData.error || 'Failed to generate prompt');
 
       const generatedPrompt = promptData.prompt as string;
@@ -294,7 +298,11 @@ export function StudioPage() {
         method: 'POST',
         body: JSON.stringify({ prompt: generatedPrompt, productImages, atmosphereImages })
       });
-      const videoData = await videoRes.json();
+      const videoData = await readApiJson<{
+        error?: string;
+        interactionId?: string;
+        fileId?: string;
+      }>(videoRes);
       if (!videoRes.ok) throw new Error(videoData.error || 'Failed to start video generation');
 
       addLog(`Interaction created successfully. ID: ${videoData.interactionId}`, 'success');
@@ -333,7 +341,11 @@ export function StudioPage() {
         method: 'POST',
         body: JSON.stringify({ previousInteractionId: fromInteractionId, instructions })
       });
-      const data = await res.json();
+      const data = await readApiJson<{
+        error?: string;
+        interactionId?: string;
+        fileId?: string;
+      }>(res);
       if (!res.ok) throw new Error(data.error || 'Edit failed');
 
       addLog(`Edit interaction created: ${data.interactionId}`, 'success');

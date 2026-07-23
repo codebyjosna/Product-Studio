@@ -4,7 +4,7 @@ import { Plus, X, Loader2 } from 'lucide-react';
 import { SuggestionChip, MediaSelection } from '../data.js';
 import { fileToDownscaledDataUrl } from '../images.js';
 import { useAuth } from '../auth/AuthContext';
-import { apiFetch } from '../lib/api';
+import { apiFetch, readApiJson } from '../lib/api';
 import { uploadUserMedia } from '../lib/mediaStorage';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -76,7 +76,7 @@ export function ImageUploader({
         body: JSON.stringify({ prompt, type }),
       });
 
-      const data = await res.json();
+      const data = await readApiJson<{ error?: string; imageUrl?: string }>(res);
       if (!res.ok) {
         throw new Error(data.error || 'Failed to generate image');
       }
