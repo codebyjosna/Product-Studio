@@ -278,18 +278,22 @@ export default function App() {
   };
 
   return (
-    <div className="md:h-screen w-full flex flex-col md:overflow-hidden bg-zinc-950 font-sans">
+    <div className="app-shell md:h-screen w-full flex flex-col md:overflow-hidden font-sans text-snow">
 
       {/* MAIN */}
       <div className="flex-1 flex flex-col md:flex-row md:overflow-hidden">
 
         {/* LEFT - BUILDER */}
-        <div className="w-full md:w-[480px] md:shrink-0 md:overflow-y-auto p-6 md:p-10 border-b md:border-b-0 md:border-r border-zinc-800 flex flex-col">
+        <div className="w-full md:w-[480px] md:shrink-0 md:overflow-y-auto p-6 md:p-10 border-b md:border-b-0 md:border-r border-line/80 bg-panel/55 backdrop-blur-xl flex flex-col">
           <header className="mb-10">
-            <h1 className="text-2xl md:text-3xl font-black uppercase tracking-tighter text-white whitespace-nowrap mb-2">
-              Omni <span className="text-zinc-500">Product Studio</span>
+            <div className="mb-3 inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.22em] text-accent">
+              <span className="h-1.5 w-1.5 rounded-sm bg-accent shadow-[0_0_12px_rgba(45,212,191,0.8)]" />
+              Live studio
+            </div>
+            <h1 className="text-2xl md:text-[1.85rem] font-extrabold tracking-tight text-snow whitespace-nowrap mb-2">
+              Omni <span className="text-mist font-semibold">Product Studio</span>
             </h1>
-            <p className="font-mono text-xs uppercase tracking-widest text-zinc-400 leading-relaxed">
+            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-mist/90 leading-relaxed">
               Turn static product images into a cinematic product shot
             </p>
           </header>
@@ -318,7 +322,7 @@ export default function App() {
             <button
               onClick={handleSubmit}
               disabled={!canSubmit}
-              className="group inline-flex items-center justify-center px-8 py-4 font-mono font-bold uppercase tracking-widest text-zinc-950 bg-white hover:bg-zinc-200 transition-colors w-full disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+              className="group inline-flex items-center justify-center px-8 py-4 font-mono font-bold uppercase tracking-widest text-ink bg-accent hover:bg-accent-dim transition-all duration-200 w-full shadow-[0_0_0_1px_rgba(45,212,191,0.35),0_10px_40px_rgba(45,212,191,0.18)] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:bg-accent"
             >
               {isGenerating ? (
                 <>
@@ -336,7 +340,7 @@ export default function App() {
         </div>
 
         {/* RIGHT - OUTPUT */}
-        <div className="w-full md:flex-1 p-6 md:p-10 min-h-[50vh] md:min-h-0 md:overflow-y-auto">
+        <div className="w-full md:flex-1 p-6 md:p-10 min-h-[50vh] md:min-h-0 md:overflow-y-auto bg-gradient-to-br from-transparent via-transparent to-sky-500/[0.03]">
 
           {/* Every row shares a left gutter so the version thumbnails, the main
               video, the input carousel and the prompt all line up on one edge —
@@ -349,13 +353,13 @@ export default function App() {
               <ScrollRow className="flex-1 min-w-0" rowClassName="gap-4" deps={[otherVersions.length]}>
                 {otherVersions.map(v => (
                   <button key={v.label} onClick={() => selectVersion(v.label)} className="group flex-none text-left">
-                    <div className="font-mono text-xs uppercase tracking-widest text-zinc-400 group-hover:text-white mb-1.5 transition-colors">{v.label}</div>
+                    <div className="font-mono text-xs uppercase tracking-widest text-mist group-hover:text-accent mb-1.5 transition-colors">{v.label}</div>
                     <video
                       src={v.videoUrl}
                       muted
                       playsInline
                       preload="metadata"
-                      className="w-40 aspect-video object-cover bg-black opacity-70 group-hover:opacity-100 transition-opacity"
+                      className="w-40 aspect-video object-cover bg-ink opacity-75 group-hover:opacity-100 transition-all border border-line group-hover:border-accent/40"
                     />
                   </button>
                 ))}
@@ -370,13 +374,13 @@ export default function App() {
                 <div className="flex flex-col gap-1.5">
                   <button
                     onClick={() => setEditOpen(o => !o)}
-                    className="font-mono text-sm uppercase tracking-widest text-white text-left hover:text-zinc-300 transition-colors"
+                    className="font-mono text-sm uppercase tracking-widest text-snow text-left hover:text-accent transition-colors"
                   >
                     {selected.label}
                   </button>
                   <button
                     onClick={() => setEditOpen(o => !o)}
-                    className={`font-mono text-xs uppercase tracking-widest text-left transition-colors ${editOpen ? 'text-white' : 'text-zinc-500 hover:text-white'}`}
+                    className={`font-mono text-xs uppercase tracking-widest text-left transition-colors ${editOpen ? 'text-accent' : 'text-mist hover:text-snow'}`}
                   >
                     Edit
                   </button>
@@ -385,7 +389,7 @@ export default function App() {
                     disabled={downloading}
                     aria-label={`Download ${selected.label}`}
                     title="Download video"
-                    className="w-fit text-zinc-500 hover:text-white transition-colors disabled:opacity-50"
+                    className="w-fit text-mist hover:text-accent transition-colors disabled:opacity-50"
                   >
                     {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                   </button>
@@ -413,12 +417,12 @@ export default function App() {
                       value={editText}
                       onChange={(e) => setEditText(e.target.value)}
                       placeholder={`Describe your changes to ${selected.label} — e.g. "warmer lighting", "slow orbit", "swap the backdrop"…`}
-                      className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 p-4 font-mono text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-white focus:border-transparent resize-y min-h-[100px]"
+                      className="w-full bg-panel-elevated/90 border border-line text-fog p-4 font-mono text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/40 resize-y min-h-[100px] placeholder:text-mist/50"
                     />
                     <button
                       onClick={handleEdit}
                       disabled={!editText.trim()}
-                      className="group mt-3 inline-flex items-center justify-center px-8 py-3 font-mono font-bold uppercase tracking-widest text-zinc-950 bg-white hover:bg-zinc-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+                      className="group mt-3 inline-flex items-center justify-center px-8 py-3 font-mono font-bold uppercase tracking-widest text-ink bg-accent hover:bg-accent-dim transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-accent"
                     >
                       Submit Edit
                       <ArrowRight className="ml-3 w-5 h-5 group-hover:translate-x-1 transition-transform" />
@@ -439,7 +443,7 @@ export default function App() {
                     key={i}
                     src={src}
                     alt={`Input ${i + 1}`}
-                    className="flex-none w-24 h-16 object-cover bg-zinc-900"
+                    className="flex-none w-24 h-16 object-cover bg-panel border border-line"
                   />
                 ))}
               </ScrollRow>
@@ -453,7 +457,7 @@ export default function App() {
               <div className="flex-1 min-w-0">
                 <button
                   onClick={() => setPromptOpen(o => !o)}
-                  className="flex items-center gap-2 font-mono text-sm font-bold uppercase tracking-widest text-white hover:text-zinc-300 transition-colors"
+                  className="flex items-center gap-2 font-mono text-sm font-bold uppercase tracking-widest text-snow hover:text-accent transition-colors"
                 >
                   <ChevronRight className={`w-4 h-4 transition-transform ${promptOpen ? 'rotate-90' : ''}`} />
                   Prompt
@@ -466,7 +470,7 @@ export default function App() {
                       exit={{ height: 0, opacity: 0 }}
                       className="overflow-hidden"
                     >
-                      <p className="mt-3 bg-zinc-900 border border-zinc-800 p-4 font-mono text-sm leading-relaxed text-zinc-300 whitespace-pre-wrap">
+                      <p className="mt-3 bg-panel/80 border border-line p-4 font-mono text-sm leading-relaxed text-fog whitespace-pre-wrap">
                         {selected.prompt}
                       </p>
                     </motion.div>
@@ -479,15 +483,15 @@ export default function App() {
       </div>
 
       {/* FOOTER — usage disclaimer */}
-      <footer className="shrink-0 border-t border-zinc-800/60 bg-zinc-950 px-6 md:px-10 py-3">
-        <div className="max-w-5xl space-y-1.5 text-xs leading-relaxed text-zinc-500">
+      <footer className="shrink-0 border-t border-line/70 bg-ink/80 backdrop-blur-md px-6 md:px-10 py-3">
+        <div className="max-w-5xl space-y-1.5 text-xs leading-relaxed text-mist/80">
           <p>
             By using this feature, you confirm that you have the necessary rights to any content that you upload. Do not generate content that infringes on others’ intellectual property or privacy rights. Your use of this generative AI service is subject to our{' '}
             <a
               href="https://policies.google.com/terms/generative-ai/use-policy"
               target="_blank"
               rel="noopener noreferrer"
-              className="underline hover:text-zinc-400 transition-colors"
+              className="underline decoration-accent/40 underline-offset-2 hover:text-accent transition-colors"
             >
               Prohibited Use Policy
             </a>.

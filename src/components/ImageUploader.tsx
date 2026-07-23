@@ -101,12 +101,12 @@ export function ImageUploader({
   const hasSelection = !!selection && selection.images.length > 0;
 
   return (
-    <div className="mb-8 p-5 bg-zinc-900/40 rounded-xl border border-zinc-800/80">
-      <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-300 mb-4 flex items-center justify-between">
-        <span>{title}</span>
+    <div className="mb-8 p-5 rounded-xl border border-line/90 bg-panel-elevated/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <h2 className="text-sm font-semibold tracking-wide text-fog mb-4 flex items-center justify-between">
+        <span className="uppercase">{title}</span>
         {generating && (
-          <span className="flex items-center gap-1.5 text-xs text-zinc-500 font-mono normal-case">
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" />
+          <span className="flex items-center gap-1.5 text-xs text-mist font-mono normal-case">
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
             Generating...
           </span>
         )}
@@ -114,7 +114,7 @@ export function ImageUploader({
 
       {hasSelection ? (
         <div className="space-y-3">
-          <div className="relative group w-full aspect-[4/3] rounded-lg overflow-hidden bg-zinc-950 border border-zinc-800/60">
+          <div className="relative group w-full aspect-[4/3] rounded-lg overflow-hidden bg-ink border border-line">
             <img
               src={selection.images[0]}
               alt={selection.description}
@@ -124,14 +124,14 @@ export function ImageUploader({
             {!disabled && (
               <button
                 onClick={handleClear}
-                className="absolute top-2 right-2 p-1.5 bg-black/80 hover:bg-black text-white rounded-full transition-colors border border-zinc-800"
+                className="absolute top-2 right-2 p-1.5 bg-ink/85 hover:bg-ink text-snow rounded-md transition-colors border border-line"
                 aria-label="Remove image"
               >
                 <X className="w-4 h-4" />
               </button>
             )}
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-3 pt-6">
-              <p className="text-xs font-mono text-zinc-300 line-clamp-2">
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-ink via-ink/70 to-transparent p-3 pt-8">
+              <p className="text-xs font-mono text-fog line-clamp-2">
                 {selection.description}
               </p>
             </div>
@@ -139,7 +139,7 @@ export function ImageUploader({
           {!disabled && (
             <button
               onClick={handleClear}
-              className="w-full py-2 font-mono text-xs uppercase tracking-wider text-zinc-400 hover:text-white transition-colors bg-zinc-900 border border-zinc-850 rounded-lg hover:bg-zinc-800"
+              className="w-full py-2 font-mono text-xs uppercase tracking-wider text-mist hover:text-snow transition-colors bg-panel border border-line rounded-lg hover:border-line-strong"
             >
               Reset and Generate New
             </button>
@@ -157,22 +157,22 @@ export function ImageUploader({
               disabled={disabled || generating}
               placeholder={`Describe the desired ${type} (e.g. "a colorful ceramic mug on a table"...)`}
               rows={3}
-              className="w-full bg-zinc-950 border border-zinc-800 text-zinc-200 p-3 font-mono text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-zinc-600 focus:border-transparent rounded-lg resize-none placeholder-zinc-700"
+              className="w-full bg-ink/70 border border-line text-fog p-3 font-mono text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-accent/60 focus:border-accent/40 rounded-lg resize-none placeholder-mist/40"
             />
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">Suggestions</p>
+            <p className="text-[10px] font-mono uppercase tracking-wider text-mist/80">Suggestions</p>
             <div className="flex flex-wrap gap-1.5">
               {suggestions.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => handleChipClick(item)}
                   disabled={disabled || generating}
-                  className={`px-2.5 py-1 text-[11px] font-mono rounded-full border transition-all ${
+                  className={`px-2.5 py-1 text-[11px] font-mono rounded-md border transition-all ${
                     promptText === item.prompt
-                      ? 'bg-white text-zinc-950 border-white font-medium'
-                      : 'bg-zinc-950 text-zinc-400 border-zinc-850 hover:border-zinc-700 hover:text-zinc-200'
+                      ? 'bg-accent text-ink border-accent font-medium shadow-[0_0_16px_rgba(45,212,191,0.25)]'
+                      : 'bg-ink/50 text-mist border-line hover:border-line-strong hover:text-fog'
                   }`}
                 >
                   {item.label}
@@ -184,7 +184,7 @@ export function ImageUploader({
           <button
             onClick={handleGenerate}
             disabled={disabled || generating || !promptText.trim()}
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-white hover:bg-zinc-200 text-zinc-950 font-mono text-xs font-bold uppercase tracking-wider rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-snow hover:bg-fog text-ink font-mono text-xs font-bold uppercase tracking-wider rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {generating ? (
               <>
@@ -199,9 +199,9 @@ export function ImageUploader({
           </button>
 
           <div className="relative flex py-1 items-center">
-            <div className="flex-grow border-t border-zinc-800"></div>
-            <span className="flex-shrink mx-3 text-[10px] font-mono uppercase text-zinc-600">or upload own image</span>
-            <div className="flex-grow border-t border-zinc-800"></div>
+            <div className="flex-grow border-t border-line"></div>
+            <span className="flex-shrink mx-3 text-[10px] font-mono uppercase text-mist/60">or upload own image</span>
+            <div className="flex-grow border-t border-line"></div>
           </div>
 
           <div
@@ -218,22 +218,22 @@ export function ImageUploader({
             }}
             role="button"
             tabIndex={0}
-            className={`border border-dashed p-4 text-center rounded-lg transition-colors cursor-pointer ${
+            className={`border border-dashed p-4 text-center rounded-lg transition-all cursor-pointer ${
               dragging
-                ? 'border-white bg-zinc-900/60'
-                : 'border-zinc-800 hover:border-zinc-700 bg-zinc-950/20'
+                ? 'border-accent bg-accent/10'
+                : 'border-line hover:border-line-strong bg-ink/30'
             }`}
           >
             <div className="flex flex-col items-center justify-center gap-1">
-              <Plus className="w-4 h-4 text-zinc-500" />
-              <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+              <Plus className={`w-4 h-4 ${dragging ? 'text-accent' : 'text-mist'}`} />
+              <span className="font-mono text-[10px] uppercase tracking-wider text-mist">
                 Drop your reference photo or click to browse
               </span>
             </div>
           </div>
 
           {error && (
-            <p className="text-xs font-mono text-red-500 bg-red-950/30 border border-red-900/50 p-2.5 rounded-lg">
+            <p className="text-xs font-mono text-danger bg-danger-soft/40 border border-danger/30 p-2.5 rounded-lg">
               {error}
             </p>
           )}

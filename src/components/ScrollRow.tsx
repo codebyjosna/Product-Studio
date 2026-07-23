@@ -49,9 +49,9 @@ export function ScrollRow({ children, className = '', rowClassName = '', deps = 
         {children}
       </div>
       {bar.width > 0 && (
-        <div className="md:hidden h-1 mt-0.5 bg-zinc-800 rounded-full overflow-hidden">
+        <div className="md:hidden h-1 mt-0.5 bg-line rounded-full overflow-hidden">
           <div
-            className="h-full bg-zinc-500 rounded-full"
+            className="h-full bg-accent/70 rounded-full"
             style={{ width: `${bar.width}%`, marginLeft: `${bar.left}%` }}
           />
         </div>

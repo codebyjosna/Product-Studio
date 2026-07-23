@@ -1,13 +1,85 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter Tight", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Space Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-ink: #070b12;
+  --color-panel: #0e1520;
+  --color-panel-elevated: #121a28;
+  --color-line: #1e2a3a;
+  --color-line-strong: #2a3a50;
+  --color-mist: #8b9bb4;
+  --color-fog: #c5d0e0;
+  --color-snow: #eef3fb;
+  --color-accent: #2dd4bf;
+  --color-accent-dim: #14b8a6;
+  --color-accent-soft: #134e4a;
+  --color-danger: #fb7185;
+  --color-danger-soft: #4c0519;
+  --color-warn: #fbbf24;
+  --color-ok: #34d399;
+}
+
+:root {
+  color-scheme: dark;
 }
 
 body {
-  @apply bg-zinc-950 text-zinc-50 antialiased;
+  @apply font-sans text-snow antialiased;
+  background-color: var(--color-ink);
+  background-image:
+    radial-gradient(ellipse 90% 60% at 0% 0%, rgba(45, 212, 191, 0.14), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 100% 10%, rgba(56, 189, 248, 0.10), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 70% 100%, rgba(99, 102, 241, 0.06), transparent 55%),
+    linear-gradient(180deg, #070b12 0%, #0a1018 50%, #070b12 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* Soft tech mesh over the page */
+.app-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.app-shell::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 20%, transparent 75%);
+}
+
+.app-shell::after {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(circle at 30% 40%, rgba(45, 212, 191, 0.05), transparent 35%);
+  animation: ambient-drift 14s ease-in-out infinite alternate;
+}
+
+@keyframes ambient-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); opacity: 0.7; }
+  to { transform: translate3d(4%, 3%, 0) scale(1.08); opacity: 1; }
+}
+
+@keyframes stage-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.9; }
+}
+
+.stage-idle-dot {
+  animation: stage-pulse 2.4s ease-in-out infinite;
 }
 
 .hide-scrollbar {
@@ -17,8 +89,6 @@ body {
   display: none;
 }
 
-/* Uploaded-image rows hide the scrollbar on desktop, but show a thin one on
-   mobile so it's obvious the row scrolls horizontally. */
 .uploads-scroll {
   scrollbar-width: none;
 }
@@ -28,14 +98,14 @@ body {
 @media (max-width: 767px) {
   .uploads-scroll {
     scrollbar-width: thin;
-    scrollbar-color: #52525b transparent;
+    scrollbar-color: #3f5168 transparent;
   }
   .uploads-scroll::-webkit-scrollbar {
     display: block;
     height: 4px;
   }
   .uploads-scroll::-webkit-scrollbar-thumb {
-    background-color: #52525b;
+    background-color: #3f5168;
     border-radius: 9999px;
   }
   .uploads-scroll::-webkit-scrollbar-track {
