@@ -1,5 +1,18 @@
 User-agent: *
 Allow: /
+Allow: /studio
+Allow: /upgrade
+Allow: /contact
+Allow: /terms
+Allow: /privacy
+Allow: /refund
+Allow: /html-sitemap
+Allow: /sitemap.xml
+Allow: /robots.txt
+Allow: /site.webmanifest
+Allow: /favicon.svg
+Allow: /og-image.svg
+
 Disallow: /signin
 Disallow: /signup
 Disallow: /verify-otp
@@ -11,3 +24,5 @@ Disallow: /final-summary/
 Disallow: /transaction-summary/
 
 Sitemap: https://productstudio.app/sitemap.xml
+# HTML sitemap for crawlers and accessibility
+# https://productstudio.app/html-sitemap

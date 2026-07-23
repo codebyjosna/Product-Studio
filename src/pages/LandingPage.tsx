@@ -4,6 +4,7 @@ import { motion } from 'motion/react';
 import { ArrowRight } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { SeoHead } from '../components/SeoHead';
+import { LandingSeoContent } from '../components/LandingSeoContent';
 import { SITE_NAME } from '../seo/config';
 
 export function LandingPage() {
@@ -18,11 +19,17 @@ export function LandingPage() {
   return (
     <div className="app-shell min-h-screen w-full flex flex-col font-sans text-snow">
       <SeoHead page="home" />
+      <LandingSeoContent />
 
       {/* Header */}
-      <header className="relative z-20 flex items-center justify-between gap-4 px-6 md:px-10 h-14 md:h-16">
+      <header
+        role="banner"
+        className="relative z-20 flex items-center justify-between gap-4 px-6 md:px-10 h-14 md:h-16"
+      >
         <Link
           to="/"
+          title="Product Studio — AI Product Video Generator home"
+          aria-label="Product Studio home"
           className="text-lg md:text-xl font-extrabold tracking-tight text-snow hover:text-accent transition-colors"
         >
           {SITE_NAME}
@@ -30,6 +37,7 @@ export function LandingPage() {
         <button
           type="button"
           onClick={() => navigate(user ? `/${user.userId}` : '/signin')}
+          aria-label={user ? 'Open your Product Studio workspace' : 'Sign in to Product Studio'}
           className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold tracking-wide text-ink bg-accent hover:bg-accent-dim transition-colors rounded-md shadow-[0_0_0_1px_rgba(45,212,191,0.3)]"
         >
           {user ? 'Open studio' : 'Sign in'}
@@ -37,10 +45,13 @@ export function LandingPage() {
       </header>
 
       {/* Hero — one composition */}
-      <main className="relative flex-1 flex flex-col">
-        <section className="relative min-h-[calc(100vh-3.5rem)] md:min-h-[calc(100vh-4rem)] flex flex-col justify-end overflow-hidden">
-          {/* Full-bleed visual plane */}
-          <div className="absolute inset-0" aria-hidden>
+      <main id="main-content" role="main" className="relative flex-1 flex flex-col">
+        <section
+          aria-labelledby="landing-hero-heading"
+          className="relative min-h-[calc(100vh-3.5rem)] md:min-h-[calc(100vh-4rem)] flex flex-col justify-end overflow-hidden"
+        >
+          {/* Full-bleed visual plane (decorative) */}
+          <div className="absolute inset-0" aria-hidden="true">
             <div className="absolute inset-0 bg-[#070b12]" />
             <motion.div
               className="absolute inset-0"
@@ -79,6 +90,7 @@ export function LandingPage() {
               AI product video studio
             </motion.p>
             <motion.h1
+              id="landing-hero-heading"
               className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-snow leading-[1.05]"
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
@@ -104,14 +116,18 @@ export function LandingPage() {
               <button
                 type="button"
                 onClick={goStudio}
+                aria-label="Get started with the AI product video generator studio"
+                title="Open the AI product video studio"
                 className="group inline-flex items-center gap-2.5 px-6 py-3.5 rounded-lg bg-accent text-ink text-sm font-semibold tracking-wide hover:bg-accent-dim transition-colors shadow-[0_0_0_1px_rgba(45,212,191,0.35),0_16px_48px_rgba(45,212,191,0.18)]"
               >
                 Get started
-                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
               </button>
               {!user && (
                 <Link
                   to="/signup"
+                  title="Create a Product Studio account"
+                  aria-label="Create a Product Studio account"
                   className="inline-flex items-center px-5 py-3.5 rounded-lg border border-line-strong text-sm font-semibold text-fog hover:text-snow hover:border-accent/40 transition-colors"
                 >
                   Create account
@@ -123,7 +139,7 @@ export function LandingPage() {
       </main>
 
       {/* Footer */}
-      <footer className="relative z-10 border-t border-line/80 bg-panel/50 backdrop-blur-xl">
+      <footer role="contentinfo" className="relative z-10 border-t border-line/80 bg-panel/50 backdrop-blur-xl">
         <div className="mx-auto max-w-6xl px-6 md:px-10 py-8 md:py-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div>
             <p className="text-sm font-semibold text-snow">{SITE_NAME}</p>
@@ -131,27 +147,31 @@ export function LandingPage() {
               Cinematic product reels from still photography.
             </p>
           </div>
-          <nav aria-label="Legal" className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <nav aria-label="Legal and support" className="flex flex-wrap items-center gap-x-6 gap-y-2">
             <Link
               to="/terms"
+              title="Terms and Conditions"
               className="text-sm text-mist hover:text-accent transition-colors"
             >
               Terms and Conditions
             </Link>
             <Link
               to="/privacy"
+              title="Privacy Policy"
               className="text-sm text-mist hover:text-accent transition-colors"
             >
               Privacy Policy
             </Link>
             <Link
               to="/refund"
+              title="Refund and Cancellation Policy"
               className="text-sm text-mist hover:text-accent transition-colors"
             >
               Refund &amp; Cancellation
             </Link>
             <Link
               to="/contact"
+              title="Contact Us"
               className="text-sm text-mist hover:text-accent transition-colors"
             >
               Contact Us

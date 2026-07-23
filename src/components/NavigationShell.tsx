@@ -51,6 +51,9 @@ const RefundPage = lazy(() =>
 const ContactPage = lazy(() =>
   import('../pages/LegalPages').then((m) => ({ default: m.ContactPage }))
 );
+const HtmlSitemapPage = lazy(() =>
+  import('../pages/HtmlSitemapPage').then((m) => ({ default: m.HtmlSitemapPage }))
+);
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -99,6 +102,7 @@ function RoutedApp({ location }: { location: ReturnType<typeof useLocation> }) {
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/refund" element={<RefundPage />} />
       <Route path="/contact" element={<ContactPage />} />
+      <Route path="/html-sitemap" element={<HtmlSitemapPage />} />
       <Route path="/:userId" element={<HomeById />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

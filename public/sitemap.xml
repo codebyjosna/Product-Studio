@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://productstudio.app/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://productstudio.app/" />
+    <xhtml:link rel="alternate" hreflang="en-IN" href="https://productstudio.app/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://productstudio.app/" />
   </url>
   <url>
     <loc>https://productstudio.app/studio</loc>
@@ -21,6 +25,16 @@
     <priority>0.7</priority>
   </url>
   <url>
+    <loc>https://productstudio.app/contact</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://productstudio.app/html-sitemap</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+  <url>
     <loc>https://productstudio.app/terms</loc>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
@@ -34,10 +48,5 @@
     <loc>https://productstudio.app/refund</loc>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
-  </url>
-  <url>
-    <loc>https://productstudio.app/contact</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
   </url>
 </urlset>

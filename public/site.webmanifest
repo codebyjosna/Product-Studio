@@ -1,12 +1,14 @@
 {
   "name": "Product Studio",
   "short_name": "Product Studio",
-  "description": "AI product video studio — turn product photos into cinematic marketing reels.",
+  "description": "AI product video generator — turn product photos into cinematic ads, Instagram reels, and ecommerce videos.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#070b12",
   "theme_color": "#070b12",
   "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "photo", "productivity"],
   "icons": [
     {
       "src": "/favicon.svg",

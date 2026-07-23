@@ -317,7 +317,7 @@ export function StudioPage() {
 
   return (
     <div className="app-shell md:h-screen w-full flex flex-col md:overflow-hidden font-sans text-snow">
-      <SeoHead page="home" title="Studio | Product Studio" path="/studio" />
+      <SeoHead page="studio" title="Studio | Product Studio" path="/studio" />
 
       {/* TOP HEADER */}
       <AppHeader />
