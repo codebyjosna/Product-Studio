@@ -1,4 +1,6 @@
-import type { AuthSession, AuthUser, PendingReset, PendingSignup } from './types';
+import type { AuthSession, AuthUser, PendingReset, PendingSignup, PlanId } from './types';
+import { normalizePlanId } from './types';
+import { TOKENS_PER_GENERATION, initialTokensForPlan } from './tokens';
 
 const USERS_KEY = 'ps_users';
 const SESSION_KEY = 'ps_session';
@@ -44,8 +46,33 @@ export function findUserByEmail(email: string): AuthUser | undefined {
   return getUsers().find((u) => u.email === normalized);
 }
 
+/** Resolve tokens: explicit value, or allotment for plan if never set. */
+export function resolveTokens(user: Pick<AuthUser, 'planId' | 'tokens'>): number | null {
+  if (user.tokens === null) return null;
+  if (typeof user.tokens === 'number') return Math.max(0, user.tokens);
+  return initialTokensForPlan(normalizePlanId(user.planId));
+}
+
+function toSession(user: AuthUser): AuthSession {
+  const planId = normalizePlanId(user.planId);
+  return {
+    userId: user.id,
+    name: user.name,
+    email: user.email,
+    planId,
+    tokens: resolveTokens({ planId, tokens: user.tokens }),
+  };
+}
+
 export function getSession(): AuthSession | null {
-  return readJson<AuthSession>(SESSION_KEY);
+  const session = readJson<AuthSession>(SESSION_KEY);
+  if (!session) return null;
+  const planId = normalizePlanId(session.planId);
+  return {
+    ...session,
+    planId,
+    tokens: resolveTokens({ planId, tokens: session.tokens }),
+  };
 }
 
 export function setSession(session: AuthSession | null) {
@@ -53,7 +80,11 @@ export function setSession(session: AuthSession | null) {
     localStorage.removeItem(SESSION_KEY);
     return;
   }
-  writeJson(SESSION_KEY, session);
+  writeJson(SESSION_KEY, {
+    ...session,
+    planId: normalizePlanId(session.planId),
+    tokens: resolveTokens(session),
+  });
 }
 
 export function getPendingSignup(): PendingSignup | null {
@@ -102,14 +133,12 @@ export function createUserFromPending(pending: PendingSignup): AuthSession {
     name: pending.name,
     email: pending.email,
     passwordHash: pending.passwordHash,
+    planId: 'free',
+    tokens: initialTokensForPlan('free'),
   };
   saveUsers([...users, user]);
   setPendingSignup(null);
-  const session: AuthSession = {
-    userId: user.id,
-    name: user.name,
-    email: user.email,
-  };
+  const session = toSession(user);
   setSession(session);
   return session;
 }
@@ -126,3 +155,73 @@ export async function updatePassword(email: string, newPassword: string) {
   saveUsers(users);
   setPendingReset(null);
 }
+
+/** Activate a paid plan and grant its token allotment. */
+export function updateUserPlan(userId: string, planId: PlanId): AuthSession | null {
+  const users = getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx < 0) return null;
+  const normalized = normalizePlanId(planId);
+  users[idx] = {
+    ...users[idx],
+    planId: normalized,
+    tokens: initialTokensForPlan(normalized),
+  };
+  saveUsers(users);
+  const session = toSession(users[idx]);
+  setSession(session);
+  return session;
+}
+
+export type ConsumeResult =
+  | { ok: true; session: AuthSession }
+  | { ok: false; reason: 'no_user' | 'insufficient'; session: AuthSession | null };
+
+/** Deduct generation cost from the user's balance. */
+export function consumeUserTokens(
+  userId: string,
+  cost = TOKENS_PER_GENERATION
+): ConsumeResult {
+  const users = getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx < 0) return { ok: false, reason: 'no_user', session: null };
+
+  const current = resolveTokens(users[idx]);
+  if (current === null) {
+    const session = toSession(users[idx]);
+    setSession(session);
+    return { ok: true, session };
+  }
+  if (current < cost) {
+    const session = toSession(users[idx]);
+    setSession(session);
+    return { ok: false, reason: 'insufficient', session };
+  }
+
+  users[idx] = { ...users[idx], tokens: current - cost };
+  saveUsers(users);
+  const session = toSession(users[idx]);
+  setSession(session);
+  return { ok: true, session };
+}
+
+/** Ensure legacy users get a free token balance when missing. */
+export function ensureUserTokens(userId: string): AuthSession | null {
+  const users = getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx < 0) return null;
+  if (users[idx].tokens === undefined) {
+    const planId = normalizePlanId(users[idx].planId);
+    users[idx] = {
+      ...users[idx],
+      planId,
+      tokens: initialTokensForPlan(planId),
+    };
+    saveUsers(users);
+  }
+  const session = toSession(users[idx]);
+  setSession(session);
+  return session;
+}
+
+export { toSession };

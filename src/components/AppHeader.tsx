@@ -1,13 +1,54 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronDown, Eye, EyeOff, FileText, LogOut, Shield, Sparkles } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, FileText, LogOut, Shield, Sparkles, Coins } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
+import { PLAN_LABELS, type PlanId } from '../auth/types';
+import { TOKENS_PER_GENERATION } from '../auth/tokens';
 
 const menuItemClass =
   'w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm text-fog hover:bg-ink/60 hover:text-snow transition-colors';
 
+function PlanBadge({ planId }: { planId: PlanId }) {
+  const styles: Record<PlanId, string> = {
+    free: 'border-line text-mist bg-panel-elevated/80',
+    starter: 'border-sky-400/40 text-sky-300 bg-sky-500/10',
+    pro: 'border-[#c8f542]/40 text-[#c8f542] bg-[#c8f542]/10',
+    enterprise: 'border-accent/40 text-accent bg-accent/10',
+  };
+
+  return (
+    <span
+      className={`inline-flex items-center px-2.5 py-1 rounded-md border font-mono text-[10px] font-bold uppercase tracking-[0.18em] ${styles[planId]}`}
+    >
+      {PLAN_LABELS[planId]}
+    </span>
+  );
+}
+
+function TokenStatus({ tokens }: { tokens: number | null }) {
+  const empty = tokens !== null && tokens < TOKENS_PER_GENERATION;
+  const low = tokens !== null && tokens > 0 && tokens < TOKENS_PER_GENERATION * 2;
+
+  return (
+    <div
+      title={tokens == null ? 'Unlimited tokens' : `${tokens} tokens remaining · ${TOKENS_PER_GENERATION} per generation`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border font-mono text-[10px] font-bold uppercase tracking-[0.14em] ${
+        empty
+          ? 'border-danger/40 text-danger bg-danger/10'
+          : low
+            ? 'border-warn/40 text-warn bg-warn/10'
+            : 'border-accent/35 text-accent bg-accent/10'
+      }`}
+    >
+      <Coins className="w-3 h-3" />
+      <span>{tokens == null ? '∞' : tokens}</span>
+      <span className="text-[9px] opacity-70 normal-case tracking-normal font-medium">tokens</span>
+    </div>
+  );
+}
+
 export function AppHeader() {
-  const { user, signOut } = useAuth();
+  const { user, planId, tokens, signOut } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -20,12 +61,20 @@ export function AppHeader() {
 
   return (
     <header className="shrink-0 z-20 flex items-center justify-between gap-4 px-6 md:px-10 h-14 md:h-16 border-b border-line/80 bg-panel/70 backdrop-blur-xl">
-      <Link
-        to={user ? `/${user.userId}` : '/'}
-        className="text-lg md:text-xl font-extrabold tracking-tight text-snow hover:text-accent transition-colors"
-      >
-        Product Studio
-      </Link>
+      <div className="flex items-center gap-2 md:gap-3 min-w-0">
+        <Link
+          to={user ? `/${user.userId}` : '/'}
+          className="text-lg md:text-xl font-extrabold tracking-tight text-snow hover:text-accent transition-colors truncate"
+        >
+          Product Studio
+        </Link>
+        {user && (
+          <>
+            <PlanBadge planId={planId} />
+            <TokenStatus tokens={tokens} />
+          </>
+        )}
+      </div>
 
       {user ? (
         <div className="relative">

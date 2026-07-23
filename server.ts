@@ -542,6 +542,106 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
     }
   });
 
+  // ---- Razorpay ----
+  const RAZORPAY_PLAN_PRICES: Record<string, { monthly: number; name: string }> = {
+    starter: { monthly: 3, name: 'Starter' },
+    pro: { monthly: 10, name: 'Pro' },
+    enterprise: { monthly: 50, name: 'Enterprise' },
+  };
+
+  app.get('/api/razorpay/config', (_req, res) => {
+    const keyId = process.env.RAZORPAY_KEY_ID;
+    if (!keyId) {
+      return res.status(503).json({ error: 'Razorpay is not configured. Set RAZORPAY_KEY_ID.' });
+    }
+    res.json({
+      keyId,
+      currency: process.env.RAZORPAY_CURRENCY || 'INR',
+    });
+  });
+
+  app.post('/api/razorpay/create-order', async (req, res) => {
+    try {
+      const keyId = process.env.RAZORPAY_KEY_ID;
+      const keySecret = process.env.RAZORPAY_KEY_SECRET;
+      if (!keyId || !keySecret) {
+        return res.status(503).json({
+          error: 'Razorpay is not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.',
+        });
+      }
+
+      const { planId, billing, billingAddress, currency, amountMinor, planAmountMajor, taxAmountMajor, totalMajor } = req.body as {
+        planId?: string;
+        billing?: string;
+        billingAddress?: {
+          name?: string;
+          email?: string;
+          fullAddress?: string;
+          city?: string;
+          state?: string;
+          pincode?: string;
+          country?: string;
+        };
+        currency?: string;
+        amountMinor?: number;
+        planAmountMajor?: number;
+        taxAmountMajor?: number;
+        totalMajor?: number;
+      };
+      const plan = planId ? RAZORPAY_PLAN_PRICES[planId] : undefined;
+      if (!plan) {
+        return res.status(400).json({ error: 'Invalid plan selected.' });
+      }
+
+      const isAnnual = billing === 'annual';
+      const orderCurrency = (currency || process.env.RAZORPAY_CURRENCY || 'INR').toUpperCase();
+      // Prefer client-computed total (FX + tax); fallback to simple major-unit price
+      let amount: number;
+      if (typeof amountMinor === 'number' && amountMinor > 0) {
+        amount = Math.round(amountMinor);
+      } else {
+        const amountMajor = isAnnual ? plan.monthly * 10 : plan.monthly;
+        amount = Math.round(amountMajor * 100);
+      }
+
+      const Razorpay = (await import('razorpay')).default;
+      const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
+
+      const order = await razorpay.orders.create({
+        amount,
+        currency: orderCurrency,
+        receipt: `ps_${planId}_${Date.now()}`.slice(0, 40),
+        notes: {
+          planId: planId!,
+          planName: plan.name,
+          billing: isAnnual ? 'annual' : 'monthly',
+          customerName: billingAddress?.name || '',
+          customerEmail: billingAddress?.email || '',
+          address: billingAddress?.fullAddress || '',
+          city: billingAddress?.city || '',
+          state: billingAddress?.state || '',
+          pincode: billingAddress?.pincode || '',
+          country: billingAddress?.country || '',
+          planAmount: String(planAmountMajor ?? ''),
+          taxAmount: String(taxAmountMajor ?? ''),
+          total: String(totalMajor ?? ''),
+        },
+      });
+
+      res.json({
+        keyId,
+        orderId: order.id,
+        amount: order.amount,
+        currency: order.currency,
+        planName: plan.name,
+        billing: isAnnual ? 'annual' : 'monthly',
+      });
+    } catch (error: any) {
+      console.error('Razorpay create-order error:', error);
+      res.status(500).json({ error: error?.error?.description || error.message || 'Failed to create payment order' });
+    }
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

@@ -1,67 +1,8 @@
 import React, { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Check, Hexagon, Triangle, Circle } from 'lucide-react';
 import { AppHeader } from '../components/AppHeader';
-
-type Billing = 'monthly' | 'annual';
-
-interface Plan {
-  id: string;
-  name: string;
-  monthlyPrice: number;
-  tagline: string;
-  tokens: string;
-  features: string[];
-  popular?: boolean;
-  icon: 'circle' | 'triangle' | 'hex';
-}
-
-const PLANS: Plan[] = [
-  {
-    id: 'starter',
-    name: 'Starter',
-    monthlyPrice: 3,
-    tagline: 'Best for trying Product Studio',
-    tokens: '1,000 tokens',
-    features: [
-      '1,000 generation tokens',
-      '30-day access window',
-      'Standard render quality',
-      'Email support',
-    ],
-    icon: 'circle',
-  },
-  {
-    id: 'pro',
-    name: 'Pro',
-    monthlyPrice: 10,
-    tagline: 'Most popular plan',
-    tokens: '4,500 tokens',
-    features: [
-      '4,500 generation tokens',
-      '30-day access window',
-      'Priority render queue',
-      'HD video exports',
-      'Chat support',
-    ],
-    popular: true,
-    icon: 'triangle',
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    monthlyPrice: 50,
-    tagline: 'Best for growing brands',
-    tokens: 'Unlimited tokens',
-    features: [
-      'Unlimited generation tokens',
-      '30-day access window',
-      'Highest priority queue',
-      'Team-ready workflow',
-      'Dedicated support',
-    ],
-    icon: 'hex',
-  },
-];
+import { Billing, PLANS, Plan, planPrice } from '../data/plans';
 
 function PlanIcon({ type, popular }: { type: Plan['icon']; popular?: boolean }) {
   const color = popular ? 'text-[#c8f542]' : 'text-sky-400';
@@ -79,22 +20,22 @@ function PlanIcon({ type, popular }: { type: Plan['icon']; popular?: boolean }) 
 }
 
 export function UpgradePage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const needsTokens = (location.state as { reason?: string } | null)?.reason === 'tokens';
   const [billing, setBilling] = useState<Billing>('monthly');
 
-  const priceFor = (monthly: number) => {
-    if (billing === 'monthly') return monthly;
-    // Annual: 10× monthly (2 months free)
-    return monthly * 10;
-  };
-
   const periodLabel = billing === 'monthly' ? '/ MO' : '/ YR';
+
+  const selectPlan = (planId: string) => {
+    navigate(`/order-summary/${planId}?billing=${billing}`);
+  };
 
   return (
     <div className="app-shell min-h-screen w-full flex flex-col font-sans text-snow">
       <AppHeader />
 
       <main className="relative flex-1 overflow-y-auto">
-        {/* Blueprint-style backdrop */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 opacity-[0.18]"
@@ -119,6 +60,11 @@ export function UpgradePage() {
         />
 
         <div className="relative z-10 mx-auto max-w-6xl px-6 py-12 md:py-16">
+          {needsTokens && (
+            <div className="mb-8 mx-auto max-w-xl text-center rounded-xl border border-warn/35 bg-warn/10 px-4 py-3 text-sm text-warn">
+              You&apos;re out of tokens. Upgrade a plan to keep generating.
+            </div>
+          )}
           <div className="text-center mb-10 md:mb-12">
             <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-snow mb-6">
               Flexible pricing for teams of all sizes.
@@ -155,7 +101,7 @@ export function UpgradePage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-6 lg:items-stretch pt-8">
             {PLANS.map((plan) => {
-              const price = priceFor(plan.monthlyPrice);
+              const price = planPrice(plan, billing);
               const popular = !!plan.popular;
 
               return (
@@ -205,6 +151,7 @@ export function UpgradePage() {
 
                   <button
                     type="button"
+                    onClick={() => selectPlan(plan.id)}
                     className={`group w-full flex items-center overflow-hidden rounded-xl border transition-colors ${
                       popular
                         ? 'border-[#c8f542]/40 bg-[#0b1220] hover:border-[#c8f542]/70'

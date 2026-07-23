@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { AuthShell, AuthError, AuthLink, FieldLabel, PasswordInput } from '../components/AppHeader';
@@ -7,6 +7,8 @@ import { AuthShell, AuthError, AuthLink, FieldLabel, PasswordInput } from '../co
 export function SignInPage() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const fromGenerate = (location.state as { from?: string } | null)?.from === 'generate';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +29,19 @@ export function SignInPage() {
   };
 
   return (
-    <AuthShell title="Sign in" subtitle="Welcome back to Product Studio">
+    <AuthShell
+      title="Sign in"
+      subtitle={
+        fromGenerate
+          ? 'Sign in to generate images and videos in Product Studio'
+          : 'Welcome back to Product Studio'
+      }
+    >
+      {fromGenerate && (
+        <p className="mb-4 text-xs font-mono text-accent/90 bg-accent/10 border border-accent/25 rounded-lg px-3 py-2">
+          Generation requires an account. Sign in to continue.
+        </p>
+      )}
       <AuthError message={error} />
       <form onSubmit={onSubmit} className="space-y-4">
         <div>

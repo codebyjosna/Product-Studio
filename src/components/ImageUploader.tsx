@@ -1,7 +1,9 @@
 import React, { useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, X, Loader2 } from 'lucide-react';
 import { SuggestionChip, MediaSelection } from '../data.js';
 import { fileToDownscaledDataUrl } from '../images.js';
+import { useAuth } from '../auth/AuthContext';
 
 interface ImageUploaderProps {
   title: string;
@@ -20,11 +22,31 @@ export function ImageUploader({
   onSelect,
   disabled = false,
 }: ImageUploaderProps) {
+  const { user, canGenerate, consumeTokens, generationCost } = useAuth();
+  const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [promptText, setPromptText] = useState('');
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const requireSignIn = () => {
+    navigate('/signin', { state: { from: 'generate' } });
+  };
+
+  const requireTokensOrUpgrade = () => {
+    if (!canGenerate) {
+      setError(`Out of tokens. Each generation uses ${generationCost} tokens.`);
+      navigate('/upgrade', { state: { reason: 'tokens' } });
+      return false;
+    }
+    if (!consumeTokens()) {
+      setError('Out of tokens. Please upgrade your plan.');
+      navigate('/upgrade', { state: { reason: 'tokens' } });
+      return false;
+    }
+    return true;
+  };
 
   const handleChipClick = (suggestion: SuggestionChip) => {
     setPromptText(suggestion.prompt);
@@ -32,11 +54,16 @@ export function ImageUploader({
   };
 
   const handleGenerate = async () => {
+    if (!user) {
+      requireSignIn();
+      return;
+    }
     const prompt = promptText.trim();
     if (!prompt) {
       setError('Please write or select a prompt first.');
       return;
     }
+    if (!requireTokensOrUpgrade()) return;
 
     setGenerating(true);
     setError(null);
@@ -72,6 +99,10 @@ export function ImageUploader({
   };
 
   const handleFiles = async (fileList: FileList | null) => {
+    if (!user) {
+      requireSignIn();
+      return;
+    }
     const picked = Array.from(fileList ?? []).filter((f) =>
       f.type.startsWith('image/')
     );

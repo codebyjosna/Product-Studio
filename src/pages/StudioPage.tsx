@@ -7,6 +7,8 @@ import { VideoOutput } from '../components/VideoOutput.js';
 import { ScrollRow } from '../components/ScrollRow.js';
 import { toInlineImages, InlineImage } from '../images.js';
 import { AppHeader } from '../components/AppHeader.js';
+import { useAuth } from '../auth/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 type LogType = 'info' | 'success' | 'warn' | 'error';
 type AppState = 'IDLE' | 'GENERATING_ATMOSPHERE' | 'GENERATING_PROMPT' | 'GENERATING_VIDEO' | 'VIDEO_READY';
@@ -19,6 +21,12 @@ interface VideoVersion {
 }
 
 export function StudioPage() {
+  const { user, canGenerate, consumeTokens, generationCost } = useAuth();
+  const navigate = useNavigate();
+  const requireSignIn = () => {
+    navigate('/signin', { state: { from: 'generate' } });
+    return false;
+  };
   const [product, setProduct] = useState<MediaSelection | null>(null);
   const [atmosphere, setAtmosphere] = useState<MediaSelection | null>(null);
   const [appState, setAppState] = useState<AppState>('IDLE');
@@ -130,8 +138,22 @@ export function StudioPage() {
   // Initial generation from the sidebar: optionally render an atmosphere image
   // first, then write the prompt and render V1.
   const handleSubmit = async () => {
+    if (!user) {
+      requireSignIn();
+      return;
+    }
     if (!product || !hasAtmosphere) {
       addLog('Please add a product and an atmosphere.', 'error');
+      return;
+    }
+    if (!canGenerate) {
+      addLog(`Out of tokens. Each generation uses ${generationCost} tokens — upgrade your plan.`, 'error');
+      navigate('/upgrade', { state: { reason: 'tokens' } });
+      return;
+    }
+    if (!consumeTokens()) {
+      addLog(`Out of tokens. Upgrade to continue generating.`, 'error');
+      navigate('/upgrade', { state: { reason: 'tokens' } });
       return;
     }
     const settingInput = generatePrompt.trim();
@@ -220,7 +242,21 @@ export function StudioPage() {
 
   // Edit the selected version via Omni's stateful chaining → produces a new version.
   const handleEdit = async () => {
+    if (!user) {
+      requireSignIn();
+      return;
+    }
     if (!selected || !editText.trim() || isGenerating) return;
+    if (!canGenerate) {
+      addLog(`Out of tokens. Each generation uses ${generationCost} tokens — upgrade your plan.`, 'error');
+      navigate('/upgrade', { state: { reason: 'tokens' } });
+      return;
+    }
+    if (!consumeTokens()) {
+      addLog(`Out of tokens. Upgrade to continue generating.`, 'error');
+      navigate('/upgrade', { state: { reason: 'tokens' } });
+      return;
+    }
     const instructions = editText.trim();
     const fromLabel = selected.label;
     const fromInteractionId = selected.interactionId;
