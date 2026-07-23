@@ -11,6 +11,12 @@ import { AppHeader } from '../components/AppHeader.js';
 import { SeoHead } from '../components/SeoHead';
 import { useAuth } from '../auth/AuthContext';
 import { apiFetch, readApiJson } from '../lib/api';
+import {
+  DEFAULT_ASPECT_RATIO,
+  DEFAULT_DURATION_SEC,
+  type VideoDurationSec,
+} from '../lib/videoFormat';
+import { VideoFormatPicker } from '../components/VideoFormatPicker';
 import { useNavigate } from 'react-router-dom';
 
 type LogType = 'info' | 'success' | 'warn' | 'error';
@@ -62,6 +68,8 @@ export function StudioPage() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [editText, setEditText] = useState('');
+  const [aspectRatio, setAspectRatio] = useState(DEFAULT_ASPECT_RATIO);
+  const [durationSec, setDurationSec] = useState<VideoDurationSec>(DEFAULT_DURATION_SEC);
 
   useEffect(() => {
     let cancelled = false;
@@ -279,10 +287,18 @@ export function StudioPage() {
       setSubmittedImages([...product.images, ...atmosphereSources]);
 
       setAppState('GENERATING_PROMPT');
+      addLog(`Writing ${durationSec}s / ${aspectRatio} prompt…`, 'warn');
       addLog('Requesting Gemini Flash prompt translation...', 'warn');
       const promptRes = await apiFetch('/api/generate-prompt', {
         method: 'POST',
-        body: JSON.stringify({ productDesc: product.description, atmosphereDesc, productImages, atmosphereImages })
+        body: JSON.stringify({
+          productDesc: product.description,
+          atmosphereDesc,
+          productImages,
+          atmosphereImages,
+          durationSec,
+          aspectRatio,
+        })
       });
       const promptData = await readApiJson<{ error?: string; prompt?: string }>(promptRes);
       if (!promptRes.ok) throw new Error(promptData.error || 'Failed to generate prompt');
@@ -291,12 +307,18 @@ export function StudioPage() {
       addLog('Prompt generation complete.', 'success');
 
       setAppState('GENERATING_VIDEO');
-      addLog('Initializing Omni Video Generation pipeline...');
+      addLog(`Initializing Omni (${aspectRatio}, ${durationSec}s)…`);
       addLog('Transmitting payloads to Omni...', 'warn');
 
       const videoRes = await apiFetch('/api/generate-video', {
         method: 'POST',
-        body: JSON.stringify({ prompt: generatedPrompt, productImages, atmosphereImages })
+        body: JSON.stringify({
+          prompt: generatedPrompt,
+          productImages,
+          atmosphereImages,
+          durationSec,
+          aspectRatio,
+        })
       });
       const videoData = await readApiJson<{
         error?: string;
@@ -424,6 +446,14 @@ export function StudioPage() {
             disabled={isGenerating}
           />
 
+          <VideoFormatPicker
+            aspectRatio={aspectRatio}
+            durationSec={durationSec}
+            onAspectChange={setAspectRatio}
+            onDurationChange={setDurationSec}
+            disabled={isGenerating}
+          />
+
           {/* Persistent submit — writes the prompt and renders in one go.
               Wrapper carries the tooltip: a disabled button emits no hover events. */}
           <div title={submitHint} className={submitHint ? 'cursor-not-allowed' : undefined}>
@@ -467,7 +497,13 @@ export function StudioPage() {
                       muted
                       playsInline
                       preload="metadata"
-                      className="w-40 aspect-video object-cover bg-ink opacity-75 group-hover:opacity-100 transition-all border border-line group-hover:border-accent/40"
+                      className={`object-cover bg-ink opacity-75 group-hover:opacity-100 transition-all border border-line group-hover:border-accent/40 ${
+                        aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '3:4' || aspectRatio === '2:3'
+                          ? 'w-28 h-44'
+                          : aspectRatio === '1:1'
+                            ? 'w-36 h-36'
+                            : 'w-40 aspect-video'
+                      }`}
                     />
                   </button>
                 ))}
@@ -505,7 +541,12 @@ export function StudioPage() {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <VideoOutput appState={appState} videoUrl={selected?.videoUrl ?? null} logs={logs} />
+              <VideoOutput
+                appState={appState}
+                videoUrl={selected?.videoUrl ?? null}
+                logs={logs}
+                aspectRatio={aspectRatio}
+              />
             </div>
           </div>
 

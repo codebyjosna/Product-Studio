@@ -9,6 +9,8 @@ interface VideoOutputProps {
   appState: AppState;
   videoUrl: string | null;
   logs: LogEntry[];
+  /** Target display ratio, e.g. "9:16" */
+  aspectRatio?: string;
 }
 
 const logColor = (type: LogType) =>
@@ -34,18 +36,26 @@ const readableError = (raw: string): string => {
   return raw.replace(/^Error:\s*/, '').trim();
 };
 
-export function VideoOutput({ appState, videoUrl, logs }: VideoOutputProps) {
+export function VideoOutput({ appState, videoUrl, logs, aspectRatio = '16:9' }: VideoOutputProps) {
   const generating = appState === 'GENERATING_ATMOSPHERE' || appState === 'GENERATING_PROMPT' || appState === 'GENERATING_VIDEO';
   const lastLog = logs[logs.length - 1];
   const recentLogs = logs.slice(-6);
   const hasError = lastLog?.type === 'error';
+  const [aw, ah] = aspectRatio.split(':').map(Number);
+  const portrait = Number.isFinite(aw) && Number.isFinite(ah) && ah > aw;
+  const cssRatio = Number.isFinite(aw) && Number.isFinite(ah) ? `${aw} / ${ah}` : '16 / 9';
 
   return (
-    <div className={`w-full relative flex items-center justify-center transition-all rounded-xl border border-line/80 bg-panel/40 backdrop-blur-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${
-      hasError
-        ? 'min-h-[220px] h-auto py-6 overflow-y-auto'
-        : 'aspect-video overflow-hidden'
-    }`}>
+    <div
+      className={`relative flex items-center justify-center transition-all rounded-xl border border-line/80 bg-panel/40 backdrop-blur-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${
+        hasError
+          ? 'w-full min-h-[220px] h-auto py-6 overflow-y-auto'
+          : portrait
+            ? 'mx-auto w-full max-w-md max-h-[70vh] overflow-hidden'
+            : 'w-full overflow-hidden'
+      }`}
+      style={hasError ? undefined : { aspectRatio: cssRatio }}
+    >
       {/* subtle stage glow */}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(45,212,191,0.08),transparent_55%)]" />
 

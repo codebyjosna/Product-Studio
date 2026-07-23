@@ -16,6 +16,11 @@ import {
   refundTokensForUser,
 } from './server/billing';
 import { getTokensPerGeneration } from './server/pricing';
+import {
+  normalizeVideoFormat,
+  shotCeilingForDuration,
+  toOmniAspectRatio,
+} from './src/lib/videoFormat';
 
 const ownedFiles = new Map<string, Set<string>>(); // userId -> Gemini fileIds
 const ownedInteractions = new Map<string, Set<string>>();
@@ -189,6 +194,8 @@ async function startServer() {
   app.post('/api/generate-prompt', requireAuth, async (req: AuthedRequest, res) => {
     try {
       const { productDesc, atmosphereDesc, productImages = [], atmosphereImages = [] }: GenerateBody = req.body;
+      const { durationSec, aspectRatio } = normalizeVideoFormat(req.body || {});
+      const shots = shotCeilingForDuration(durationSec);
       const ai = getAiClient();
       const promptWriterSystemInstruction = `## Role
 You are an elite product-film director, editor and Gemini Omni prompt engineer in one box. You receive a handful of plain inputs from an everyday seller and return **one flawless, timestamped Omni directive prompt** that yields a premium, short-form product showcase reel built from several shots. You direct like a luxury commercial and cut like a master editor. Your taste *is* the product: restrained, expensive, clarifying. Never slop, never gimmick, never overclaim.
@@ -198,6 +205,7 @@ You are an elite product-film director, editor and Gemini Omni prompt engineer i
 - **A short product description** — what it is, plus key aesthetic details (plain language).
 - **A simple style brief** — often only a few words (e.g. "white studio", "clinical skincare lab"). May include a camera or shot request.
 - **Optional extra notes** — treat any later or added input as an override.
+- **Target duration and aspect ratio** — mandatory output constraints from the operator.
 
 ## Non-negotiable taste
 - Classy, simple, high-end. A tight, deliberate edit where every cut earns its place.
@@ -205,8 +213,10 @@ You are an elite product-film director, editor and Gemini Omni prompt engineer i
 - Premium = restraint and intent: controlled palette, motivated light, real materials behaving correctly, a confident rhythm.
 
 ## Format & length
-- **~10 seconds total. 2–7 shots.** *You* decide the count for this product — never pad to seven.
-- **Each shot = one timestamp.** Beats typically 1–2s; vary deliberately.
+- Honor the **target duration and aspect ratio** supplied in the user message.
+- **~${durationSec} seconds total. ${shots.min}–${shots.max} shots.** *You* decide the count for this product — never pad past the ceiling.
+- Frame and compose every shot for **${aspectRatio}** (safe margins for social crop). If Omni will deliver a nearby container ratio, still write the edit as if the final framed image is ${aspectRatio}.
+- **Each shot = one timestamp.** Beats typically 1–2s; vary deliberately for the chosen duration.
 - Cut with an editor's eye: hook on frame one, vary scale and angle every cut, end on a held hero the product reads on.
 
 ## Omni craft you apply
@@ -230,35 +240,22 @@ Levers per shot: **subject · camera framing + motion · style · lighting · lo
 ## Method (run silently, then output)
 1. **Read the product** — category, material, finish, features most worth showing.
 2. **Translate the brief** into a crafted environment, palette and light. Elevate; never literalise crudely.
-   - *"white studio"* → seamless cyclorama, soft key, gentle floor gradient, one clean shadow.
-   - *"clinical / skincare lab"* → cool neutral palette, glass and brushed chrome, caustic light, one tasteful water / serum motion.
 3. **Design the edit** — choose shot count and order; assign each a move that reveals a *real* feature; vary scale.
-4. **Time it** across ~10s with editorial rhythm and a held final beat.
+4. **Time it** across ~${durationSec}s with editorial rhythm and a held final beat.
 5. **Write the directive prompt** per the contract below.
 
 ## Output contract
-Output **only** the directive prompt — nothing else. No "shot logic" line, no headings, no fences, no explanation before or after. It must begin with the words **"Create a professional product showcase reel"** and read as one clean, paste-ready directive in this shape:
-
-Create a professional product showcase reel of  <product> locked to the reference images so its identity, proportions, label and material stay accurate in every shot. Hard cuts between shots; the product is the hero throughout. Environment: . Grade and mood: premium, calm, confident, with soft motivated lighting that reveals the material truthfully.
-
-0.0–0.0s — .
-0.0–0.0s — .
-… (2–7 shots, varied in scale and motion) …
-0.0–10.0s — .
-
-
-Materials and physics: <how light and matter behave securely>. Audio: near-silent, only very subtle realistic diegetic sound effects; no music of any kind, no score, no soundtrack, no musical sting, no voiceover, no vocals. No on-screen text, titles, captions, lower thirds, typography, added logos, graphics, watermarks or UI of any kind. Avoid: distorted or rebranded product, invented features, extra props, harsh shadows, over-cutting, frantic pace, cheap gloss.
+Output **only** the directive prompt — nothing else. It must begin with the words **"Create a professional product showcase reel"** and read as one clean, paste-ready directive timed to ~${durationSec}s at aspect ${aspectRatio}, with ${shots.min}–${shots.max} shots.
 
 ## Guardrails
 - Missing input → make the **smallest premium assumption** and fold it silently into the directive.
 - The product is the star; the environment and the edit exist only to serve it.
-- Never pad the shot count; fewer, better beats beat seven busy ones.
-- Specs (duration, shot ceiling, image count, aspect) are a dated snapshot — defer to any current limits the operator supplies.`;
+- Never pad the shot count; fewer, better beats beat a crowded cut.`;
       
       const response = await ai.models.generateContent({
         model: 'gemini-3.1-flash-lite',
         contents: [
-          { text: `Product: ${productDesc || '(no description provided — infer from the reference images)'}\nAtmosphere: ${atmosphereDesc || '(no description provided — infer from the reference images)'}\n\nProduct reference images:` },
+          { text: `Product: ${productDesc || '(no description provided — infer from the reference images)'}\nAtmosphere: ${atmosphereDesc || '(no description provided — infer from the reference images)'}\nTarget duration: ${durationSec} seconds\nTarget aspect ratio: ${aspectRatio}\n\nProduct reference images:` },
           ...productImages.map(img => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
           { text: 'Atmosphere reference images:' },
           ...atmosphereImages.map(img => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
@@ -382,18 +379,23 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
       await consumeTokensForUser(userId, (await tokenCost()));
       charged = true;
       const { prompt, productImages = [], atmosphereImages = [] }: GenerateBody & { prompt?: string } = req.body;
+      const { durationSec, aspectRatio } = normalizeVideoFormat(req.body || {});
+      const omniAspect = toOmniAspectRatio(aspectRatio);
       const ai = getAiClient();
 
-      console.log(`Sending request to Gemini Omni (${productImages.length} product, ${atmosphereImages.length} atmosphere images)...`);
+      console.log(`Sending request to Gemini Omni (${productImages.length} product, ${atmosphereImages.length} atmosphere images, ${omniAspect}, ~${durationSec}s)...`);
+
+      const timedPrompt =
+        `Output spec: aspect ${aspectRatio} (render container ${omniAspect}), total duration ~${durationSec} seconds.\n\n${prompt || ''}`;
 
       const interaction = await ai.interactions.create({
         model: 'gemini-omni-flash-preview',
         input: [
             ...productImages.map(img => ({ type: 'image' as const, data: img.data, mime_type: img.mimeType })),
             ...atmosphereImages.map(img => ({ type: 'image' as const, data: img.data, mime_type: img.mimeType })),
-            { type: 'text', text: prompt }
+            { type: 'text', text: timedPrompt }
         ],
-        response_format: { type: 'video', delivery: 'uri' },
+        response_format: { type: 'video', delivery: 'uri', aspect_ratio: omniAspect },
         store: true,
         background: false,
         stream: false

@@ -3,6 +3,11 @@ import {
   ATMOSPHERE_DIRECTOR_SYSTEM_INSTRUCTION,
   PROMPT_WRITER_SYSTEM_INSTRUCTION,
 } from '../_shared/studioPrompts.ts'
+import {
+  normalizeVideoFormat,
+  shotCeilingForDuration,
+  toOmniAspectRatio,
+} from '../_shared/videoFormat.ts'
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -294,13 +299,24 @@ Deno.serve(async (req) => {
     // ---- Prompt ----
     if (req.method === 'POST' && studioPath === '/api/generate-prompt') {
       const body = await req.json().catch(() => ({}))
+      const { durationSec, aspectRatio } = normalizeVideoFormat(body)
+      const shots = shotCeilingForDuration(durationSec)
       const productImages: InlineImage[] = body.productImages || []
       const atmosphereImages: InlineImage[] = body.atmosphereImages || []
+      const systemInstruction =
+        `${PROMPT_WRITER_SYSTEM_INSTRUCTION}
+
+## Live output constraints (override any defaults above)
+- Total duration: ~${durationSec} seconds.
+- Shot count: ${shots.min}–${shots.max}.
+- Aspect ratio: ${aspectRatio} (compose for this crop; Omni may use a nearby 16:9 or 9:16 container).`
       const parts: unknown[] = [
         {
           text:
             `Product: ${body.productDesc || '(no description provided — infer from the reference images)'}\n` +
-            `Atmosphere: ${body.atmosphereDesc || '(no description provided — infer from the reference images)'}\n\n` +
+            `Atmosphere: ${body.atmosphereDesc || '(no description provided — infer from the reference images)'}\n` +
+            `Target duration: ${durationSec} seconds\n` +
+            `Target aspect ratio: ${aspectRatio}\n\n` +
             'Product reference images:',
         },
         ...productImages.map((img) => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
@@ -310,7 +326,7 @@ Deno.serve(async (req) => {
       const prompt = await generateContent({
         model: 'gemini-3.1-flash-lite',
         parts,
-        systemInstruction: PROMPT_WRITER_SYSTEM_INSTRUCTION,
+        systemInstruction,
       })
       return json({ prompt })
     }
@@ -385,6 +401,8 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`
     // ---- Generate video ----
     if (req.method === 'POST' && studioPath === '/api/generate-video') {
       const body = await req.json().catch(() => ({}))
+      const { durationSec, aspectRatio } = normalizeVideoFormat(body)
+      const omniAspect = toOmniAspectRatio(aspectRatio)
       const cost = await tokensPerGeneration(admin)
       let charged = false
       try {
@@ -392,14 +410,16 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`
         charged = true
         const productImages: InlineImage[] = body.productImages || []
         const atmosphereImages: InlineImage[] = body.atmosphereImages || []
+        const timedPrompt =
+          `Output spec: aspect ${aspectRatio} (render container ${omniAspect}), total duration ~${durationSec} seconds.\n\n${body.prompt || ''}`
         const interaction = await createInteraction({
           model: 'gemini-omni-flash-preview',
           input: [
             ...productImages.map((img) => ({ type: 'image', data: img.data, mime_type: img.mimeType })),
             ...atmosphereImages.map((img) => ({ type: 'image', data: img.data, mime_type: img.mimeType })),
-            { type: 'text', text: body.prompt },
+            { type: 'text', text: timedPrompt },
           ],
-          response_format: { type: 'video', delivery: 'uri' },
+          response_format: { type: 'video', delivery: 'uri', aspect_ratio: omniAspect },
           store: true,
           background: false,
           stream: false,
@@ -409,7 +429,7 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`
         const fileId = fileIdFromUri(uri)
         const interactionId = String(interaction.id || '')
         await rememberOwnership(admin, userId, fileId, interactionId)
-        return json({ interactionId, uri, fileId })
+        return json({ interactionId, uri, fileId, aspectRatio, durationSec, omniAspect })
       } catch (e) {
         if (charged) await refundTokens(admin, userId, cost)
         throw e
