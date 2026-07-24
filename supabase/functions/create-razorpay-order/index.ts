@@ -1,15 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
+import { corsHeadersFor } from '../_shared/cors.ts'
 
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
-
-function json(body: unknown, status = 200) {
+function json(req: Request, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...corsHeadersFor(req), 'Content-Type': 'application/json' },
   })
 }
 
@@ -23,19 +18,19 @@ function toMinor(amount: number, currency: string) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeadersFor(req) })
+  if (req.method !== 'POST') return json(req, { error: 'Method not allowed' }, 405)
 
   try {
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) return json({ error: 'Unauthorized' }, 401)
+    if (!authHeader?.startsWith('Bearer ')) return json(req, { error: 'Unauthorized' }, 401)
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const keyId = Deno.env.get('RAZORPAY_KEY_ID')
     const keySecret = Deno.env.get('RAZORPAY_KEY_SECRET')
-    if (!keyId || !keySecret) return json({ error: 'Razorpay is not configured.' }, 503)
+    if (!keyId || !keySecret) return json(req, { error: 'Razorpay is not configured.' }, 503)
 
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -44,13 +39,13 @@ Deno.serve(async (req) => {
       data: { user },
       error: userError,
     } = await userClient.auth.getUser()
-    if (userError || !user) return json({ error: 'Unauthorized' }, 401)
+    if (userError || !user) return json(req, { error: 'Unauthorized' }, 401)
 
     const body = await req.json()
     const planId = body.planId as string
     const billing = body.billing === 'annual' ? 'annual' : 'monthly'
     const country = String(body.billingAddress?.country || body.country || '').trim()
-    if (!planId || !country) return json({ error: 'planId and billing country are required.' }, 400)
+    if (!planId || !country) return json(req, { error: 'planId and billing country are required.' }, 400)
 
     const admin = createClient(supabaseUrl, serviceKey)
 
@@ -59,14 +54,14 @@ Deno.serve(async (req) => {
       .select('value')
       .eq('key', 'app_catalog')
       .maybeSingle()
-    if (catalogError || !catalogRow?.value) return json({ error: 'app_catalog missing.' }, 500)
+    if (catalogError || !catalogRow?.value) return json(req, { error: 'app_catalog missing.' }, 500)
 
     const catalog = catalogRow.value as {
       annual_multiplier?: number
       plans?: Array<{ id: string; name: string; monthlyPrice: number }>
     }
     const plan = catalog.plans?.find((p) => p.id === planId)
-    if (!plan) return json({ error: 'Invalid plan selected.' }, 400)
+    if (!plan) return json(req, { error: 'Invalid plan selected.' }, 400)
 
     const { data: countryRow, error: countryError } = await admin
       .from('countries')
@@ -74,7 +69,7 @@ Deno.serve(async (req) => {
       .eq('name', country)
       .limit(1)
       .maybeSingle()
-    if (countryError || !countryRow) return json({ error: 'Billing country not found.' }, 400)
+    if (countryError || !countryRow) return json(req, { error: 'Billing country not found.' }, 400)
 
     const currency = String(countryRow.currency_code).trim().toUpperCase()
     const taxRate = Number(countryRow.tax_rate) || 0
@@ -82,7 +77,7 @@ Deno.serve(async (req) => {
     let fxRate = Number(countryRow.fx_rate)
     if (currency === 'USD') fxRate = 1
     if (!Number.isFinite(fxRate) || fxRate <= 0) {
-      return json({ error: `Exchange rate unavailable for ${currency}.` }, 503)
+      return json(req, { error: `Exchange rate unavailable for ${currency}.` }, 503)
     }
 
     const mult = Number(catalog.annual_multiplier) > 0 ? Number(catalog.annual_multiplier) : 10
@@ -91,7 +86,7 @@ Deno.serve(async (req) => {
     const taxAmount = planAmount * taxRate
     const total = planAmount + taxAmount
     const amountMinor = toMinor(total, currency)
-    if (amountMinor <= 0) return json({ error: 'Could not compute order amount.' }, 400)
+    if (amountMinor <= 0) return json(req, { error: 'Could not compute order amount.' }, 400)
 
     const auth = btoa(`${keyId}:${keySecret}`)
     const orderRes = await fetch('https://api.razorpay.com/v1/orders', {
@@ -122,10 +117,10 @@ Deno.serve(async (req) => {
     })
     const order = await orderRes.json()
     if (!orderRes.ok) {
-      return json({ error: order?.error?.description || 'Failed to create payment order' }, 500)
+      return json(req, { error: order?.error?.description || 'Failed to create payment order' }, 500)
     }
 
-    return json({
+    return json(req, {
       keyId,
       orderId: order.id,
       amount: order.amount,
@@ -139,6 +134,6 @@ Deno.serve(async (req) => {
       exchangeRate: fxRate,
     })
   } catch (e) {
-    return json({ error: e instanceof Error ? e.message : 'Order failed' }, 500)
+    return json(req, { error: e instanceof Error ? e.message : 'Order failed' }, 500)
   }
 })

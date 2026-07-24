@@ -34,6 +34,11 @@ export function ResetOtpPage() {
     }
     if (!pendingReset || pendingReset.email !== email) {
       void hydratePendingReset(email);
+      return;
+    }
+    // ERR-129: honor OTP expiry
+    if (pendingReset.expiresAt && Date.now() > pendingReset.expiresAt) {
+      setError('Code expired. Request a new one.');
     }
   }, [email, pendingReset, hydratePendingReset, navigate]);
 
@@ -78,6 +83,10 @@ export function ResetOtpPage() {
 
   const submitCode = async (code: string) => {
     setError(null);
+    if (pendingReset?.expiresAt && Date.now() > pendingReset.expiresAt) {
+      setError('Code expired. Request a new one.');
+      return;
+    }
     setLoading(true);
     try {
       const result = await verifyResetOtp(code, email);

@@ -155,7 +155,10 @@ export async function getFiscalForCountry(country: string): Promise<{
 export async function getUsdRates(force = false): Promise<Record<string, number>> {
   assertDb();
   if (fxCache && !force && Date.now() - fxCache.at < FX_TTL_MS) return fxCache.rates;
-  const { data, error } = await getSupabase().from('countries').select('currency_code, fx_rate');
+  const { data, error } = await getSupabase()
+    .from('countries')
+    .select('currency_code, fx_rate')
+    .eq('is_billing', true);
   if (error) throw new Error(error.message);
   if (!data?.length) throw new Error('No FX rates in countries table.');
   const rates: Record<string, number> = { USD: 1 };

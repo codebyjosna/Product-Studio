@@ -24,13 +24,26 @@ function PlanBadge({ planId }: { planId: PlanId }) {
   );
 }
 
-function TokenStatus({ tokens, generationCost }: { tokens: number | null; generationCost: number }) {
-  const empty = tokens !== null && tokens < generationCost;
-  const low = tokens !== null && tokens > 0 && tokens < generationCost * 2;
+function TokenStatus({
+  tokens,
+  generationCost,
+  planId,
+}: {
+  tokens: number | null;
+  generationCost: number;
+  planId: PlanId;
+}) {
+  const unlimited = tokens == null && planId === 'enterprise';
+  const empty = !unlimited && (tokens === null || tokens < generationCost);
+  const low = !unlimited && tokens !== null && tokens > 0 && tokens < generationCost * 2;
 
   return (
     <div
-      title={tokens == null ? 'Unlimited tokens' : `${tokens} tokens remaining · ${generationCost} per generation`}
+      title={
+        unlimited
+          ? 'Unlimited tokens'
+          : `${tokens ?? 0} tokens remaining · ${generationCost} per generation`
+      }
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[10px] font-bold uppercase tracking-[0.12em] ${
         empty
           ? 'border-danger/40 text-danger bg-danger/10'
@@ -40,7 +53,7 @@ function TokenStatus({ tokens, generationCost }: { tokens: number | null; genera
       }`}
     >
       <Coins className="w-3 h-3" />
-      <span>{tokens == null ? '∞' : tokens}</span>
+      <span>{unlimited ? '∞' : tokens ?? 0}</span>
       <span className="text-[9px] opacity-70 normal-case tracking-normal font-medium">tokens</span>
     </div>
   );
@@ -59,18 +72,18 @@ export function AppHeader() {
   };
 
   return (
-    <header className="shrink-0 z-20 flex items-center justify-between gap-4 px-6 md:px-10 h-14 md:h-16 border-b border-line/80 bg-panel/70 backdrop-blur-xl">
+    <header className="shrink-0 z-20 flex items-center justify-between gap-4 px-6 md:px-10 h-14 md:h-16 border-b border-white/8 bg-black/30 backdrop-blur-xl">
       <div className="flex items-center gap-2 md:gap-3 min-w-0">
         <Link
           to={user ? `/${user.userId}` : '/'}
-          className="text-lg md:text-xl font-extrabold tracking-tight text-snow hover:text-accent transition-colors truncate"
+          className="text-lg md:text-xl font-extrabold tracking-tight text-snow hover:opacity-90 transition-opacity truncate"
         >
           Product Studio
         </Link>
         {user && (
           <>
             <PlanBadge planId={planId} />
-            <TokenStatus tokens={tokens} generationCost={generationCost} />
+            <TokenStatus tokens={tokens} generationCost={generationCost} planId={planId} />
           </>
         )}
       </div>

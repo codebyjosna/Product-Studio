@@ -68,7 +68,7 @@ export function getSiteUrl(): string {
   return 'https://www.codewix.in';
 }
 
-export const OG_IMAGE_PATH = '/og-image.svg';
+export const OG_IMAGE_PATH = '/og-image.png';
 export const FAVICON_PATH = '/favicon.svg';
 
 export type SeoPageKey =

@@ -59,14 +59,23 @@ function mapAuthError(error: { message: string } | null, fallback: string): neve
 async function upsertAuthPending(
   email: string,
   kind: AuthPendingKind,
-  opts?: { name?: string | null; otpVerified?: boolean; ttlMinutes?: number }
+  opts?: { name?: string | null; ttlMinutes?: number }
 ): Promise<void> {
   const { error } = await getSupabase().rpc('upsert_auth_pending', {
     p_email: email,
     p_kind: kind,
     p_name: opts?.name ?? null,
-    p_otp_verified: opts?.otpVerified ?? false,
+    p_otp_verified: false,
     p_ttl_minutes: opts?.ttlMinutes ?? 10,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Requires authenticated session whose email matches (after real OTP/recovery). */
+async function markAuthPendingVerified(email: string, kind: AuthPendingKind): Promise<void> {
+  const { error } = await getSupabase().rpc('mark_auth_pending_verified', {
+    p_email: email,
+    p_kind: kind,
   });
   if (error) throw new Error(error.message);
 }
@@ -240,7 +249,7 @@ export async function startSignUp(
     return { email: normalized, pending: null };
   }
 
-  await upsertAuthPending(normalized, 'signup', { name: displayName, otpVerified: false });
+  await upsertAuthPending(normalized, 'signup', { name: displayName });
   const pending = await getPendingSignup(normalized);
   return { email: normalized, pending };
 }
@@ -290,7 +299,7 @@ export async function startPasswordReset(email: string): Promise<{ email: string
   });
   if (error) mapAuthError(error, 'Could not start password reset.');
 
-  await upsertAuthPending(normalized, 'reset', { otpVerified: false });
+  await upsertAuthPending(normalized, 'reset');
   const pending = await getPendingReset(normalized);
   return { email: normalized, pending };
 }
@@ -307,7 +316,8 @@ export async function verifyResetOtp(email: string, otp: string): Promise<{ emai
   });
   if (error) mapAuthError(error, 'Invalid verification code.');
 
-  await upsertAuthPending(normalized, 'reset', { otpVerified: true });
+  // Session now exists for this email — server RPC marks verified (ERR-103).
+  await markAuthPendingVerified(normalized, 'reset');
   const pending = await getPendingReset(normalized);
   return { email: normalized, pending };
 }
@@ -321,26 +331,43 @@ export async function completePasswordReset(
 
   const supabase = getSupabase();
   const { data: sessionData } = await supabase.auth.getSession();
-  const hasSession = !!sessionData.session;
-  const normalized =
-    (email || sessionData.session?.user?.email || '').trim().toLowerCase() || undefined;
-  const pending = normalized ? await getPendingReset(normalized) : null;
-
-  if (!pending?.otpVerified && !hasSession) {
+  const sessionUser = sessionData.session?.user;
+  if (!sessionUser) {
     throw new Error('Verify your email code before setting a new password.');
   }
 
-  // Recovery email link creates a session without going through OTP UI.
-  if (hasSession && !pending?.otpVerified && normalized) {
-    await upsertAuthPending(normalized, 'reset', { otpVerified: true });
+  const normalized =
+    (email || sessionUser.email || '').trim().toLowerCase() || undefined;
+  if (!normalized || normalized !== (sessionUser.email || '').trim().toLowerCase()) {
+    throw new Error('Session email mismatch. Restart password reset.');
+  }
+
+  const pending = await getPendingReset(normalized);
+  const amr = (sessionData.session as { amr?: Array<{ method?: string }> } | null)?.amr;
+  const isRecovery =
+    Array.isArray(amr) && amr.some((a) => /recovery|otp|magiclink/i.test(String(a?.method || '')));
+  const hashRecovery =
+    typeof window !== 'undefined' &&
+    (/type=recovery/i.test(window.location.hash || '') ||
+      /type=recovery/i.test(window.location.search || ''));
+
+  // ERR-144: require verified pending (OTP UI) or a recovery session — never a normal password login.
+  if (pending?.otpVerified) {
+    // ok
+  } else if (isRecovery || hashRecovery) {
+    try {
+      await markAuthPendingVerified(normalized, 'reset');
+    } catch {
+      throw new Error('Start password reset again, then open the email link or enter the code.');
+    }
+  } else {
+    throw new Error('Verify your email code before setting a new password.');
   }
 
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) mapAuthError(error, 'Could not update password.');
 
-  if (normalized) {
-    await clearAuthPending(normalized, 'reset').catch(() => undefined);
-  }
+  await clearAuthPending(normalized, 'reset').catch(() => undefined);
 
   const session = await fetchSessionFromAuth();
   if (!session) throw new Error('Password updated. Please sign in again.');

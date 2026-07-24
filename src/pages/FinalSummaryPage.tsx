@@ -37,25 +37,36 @@ type Fiscal = NonNullable<Awaited<ReturnType<typeof getFiscalForCountry>>>;
 
 async function createRazorpayOrder(body: Record<string, unknown>) {
   const payload = JSON.stringify(body);
+  const hasExpressApi = Boolean(
+    (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '')
+  );
 
   try {
     const edgeRes = await edgeFetch('create-razorpay-order', {
       method: 'POST',
       body: payload,
     });
-    const edgeData = await edgeRes.json();
+    const edgeData = await edgeRes.json().catch(() => ({}));
     if (edgeRes.ok) return edgeData;
-  } catch {
-    // Fall through to Express
+    if (!hasExpressApi) {
+      throw new Error(
+        (edgeData as { error?: string }).error ||
+          `Failed to start Razorpay checkout (${edgeRes.status}).`
+      );
+    }
+  } catch (e) {
+    if (!hasExpressApi) throw e;
   }
 
   const orderRes = await apiFetch('/api/razorpay/create-order', {
     method: 'POST',
     body: payload,
   });
-  const orderData = await orderRes.json();
+  const orderData = await orderRes.json().catch(() => ({}));
   if (!orderRes.ok) {
-    throw new Error(orderData.error || 'Failed to start Razorpay checkout.');
+    throw new Error(
+      (orderData as { error?: string }).error || 'Failed to start Razorpay checkout.'
+    );
   }
   return orderData;
 }

@@ -9,7 +9,8 @@ export function SignInPage() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const fromGenerate = (location.state as { from?: string } | null)?.from === 'generate';
+  const fromPath = (location.state as { from?: string } | null)?.from;
+  const fromGenerate = fromPath === 'generate';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +22,15 @@ export function SignInPage() {
     setLoading(true);
     try {
       const session = await signIn(email, password);
-      navigate(`/${session.userId}`, { replace: true });
+      // ERR-107: return to checkout / internal path when provided
+      const safeFrom =
+        typeof fromPath === 'string' &&
+        fromPath.startsWith('/') &&
+        !fromPath.startsWith('//') &&
+        fromPath !== 'generate'
+          ? fromPath
+          : null;
+      navigate(safeFrom || `/${session.userId}`, { replace: true });
     } catch (err: any) {
       setError(err.message || 'Sign in failed.');
     } finally {

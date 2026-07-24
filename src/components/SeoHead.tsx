@@ -182,7 +182,7 @@ export function SeoHead({
     upsertMeta('property', 'og:url', canonical);
     upsertMeta('property', 'og:image', ogImage);
     upsertMeta('property', 'og:image:secure_url', ogImage);
-    upsertMeta('property', 'og:image:type', 'image/svg+xml');
+    upsertMeta('property', 'og:image:type', 'image/png');
     upsertMeta('property', 'og:image:width', '1200');
     upsertMeta('property', 'og:image:height', '630');
     upsertMeta('property', 'og:image:alt', `${SITE_NAME} — AI Product Video Generator`);

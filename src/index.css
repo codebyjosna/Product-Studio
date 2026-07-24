@@ -1,21 +1,21 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Sora", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --color-ink: #070b12;
-  --color-panel: #0e1520;
-  --color-panel-elevated: #121a28;
-  --color-line: #1e2a3a;
-  --color-line-strong: #2a3a50;
-  --color-mist: #8b9bb4;
-  --color-fog: #c5d0e0;
-  --color-snow: #eef3fb;
-  --color-accent: #2dd4bf;
-  --color-accent-dim: #14b8a6;
-  --color-accent-soft: #134e4a;
+  --color-ink: #050508;
+  --color-panel: #0c0c12;
+  --color-panel-elevated: #12121a;
+  --color-line: #1e1e2a;
+  --color-line-strong: #2e2e3d;
+  --color-mist: #8b8ba0;
+  --color-fog: #c8c8d8;
+  --color-snow: #f4f4f8;
+  --color-accent: #7dd3fc;
+  --color-accent-dim: #38bdf8;
+  --color-accent-soft: #0c4a6e;
   --color-danger: #fb7185;
   --color-danger-soft: #4c0519;
   --color-warn: #fbbf24;
@@ -28,17 +28,18 @@
 
 body {
   @apply font-sans text-snow antialiased;
-  background-color: var(--color-ink);
+  background-color: #050508;
   background-image:
-    radial-gradient(ellipse 90% 60% at 0% 0%, rgba(45, 212, 191, 0.14), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 100% 10%, rgba(56, 189, 248, 0.10), transparent 50%),
-    radial-gradient(ellipse 60% 40% at 70% 100%, rgba(99, 102, 241, 0.06), transparent 55%),
-    linear-gradient(180deg, #070b12 0%, #0a1018 50%, #070b12 100%);
+    radial-gradient(ellipse 80% 55% at 50% 110%, rgba(236, 72, 153, 0.35), transparent 55%),
+    radial-gradient(ellipse 55% 45% at 15% 85%, rgba(59, 130, 246, 0.45), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 90% 80%, rgba(168, 85, 247, 0.28), transparent 48%),
+    radial-gradient(ellipse 40% 30% at 70% 100%, rgba(14, 165, 233, 0.2), transparent 45%),
+    linear-gradient(180deg, #050508 0%, #08080e 55%, #050508 100%);
   background-attachment: fixed;
   min-height: 100vh;
 }
 
-/* Soft tech mesh over the page */
+/* Soft aurora shell */
 .app-shell {
   position: relative;
   isolation: isolate;
@@ -50,12 +51,13 @@ body {
   position: fixed;
   inset: 0;
   z-index: -1;
-  opacity: 0.35;
-  background-image:
-    linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 20%, transparent 75%);
+  opacity: 0.55;
+  background:
+    radial-gradient(ellipse 70% 50% at 50% 100%, rgba(236, 72, 153, 0.22), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 20% 90%, rgba(37, 99, 235, 0.35), transparent 55%),
+    radial-gradient(ellipse 45% 35% at 85% 95%, rgba(147, 51, 234, 0.25), transparent 50%);
+  filter: blur(40px);
+  animation: aurora-breathe 10s ease-in-out infinite alternate;
 }
 
 .app-shell::after {
@@ -64,8 +66,12 @@ body {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background: radial-gradient(circle at 30% 40%, rgba(45, 212, 191, 0.05), transparent 35%);
-  animation: ambient-drift 14s ease-in-out infinite alternate;
+  background: radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.04), transparent 45%);
+}
+
+@keyframes aurora-breathe {
+  from { opacity: 0.4; transform: translate3d(0, 2%, 0) scale(1); }
+  to { opacity: 0.7; transform: translate3d(0, -1%, 0) scale(1.05); }
 }
 
 @keyframes ambient-drift {
@@ -80,6 +86,74 @@ body {
 
 .stage-idle-dot {
   animation: stage-pulse 2.4s ease-in-out infinite;
+}
+
+/* Lovable-style stadium command bar */
+.command-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 42rem;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.5rem 0.5rem 1rem;
+  border-radius: 9999px;
+  background: rgba(18, 18, 26, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 24px 80px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(20px);
+}
+
+.command-bar:focus-within {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.15) inset,
+    0 24px 80px rgba(0, 0, 0, 0.5),
+    0 0 40px rgba(59, 130, 246, 0.12);
+}
+
+.command-bar input,
+.command-bar textarea {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--color-snow);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  resize: none;
+}
+
+.command-bar input::placeholder,
+.command-bar textarea::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.85rem 0.35rem 0.35rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.pill-badge .pill-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 9999px;
+  background: #3b82f6;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 .hide-scrollbar {

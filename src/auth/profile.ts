@@ -75,13 +75,16 @@ export async function confirmRazorpayPaymentViaApi(
   payload: ConfirmRazorpayPaymentPayload
 ): Promise<{ session: AuthSession; txnCode: string; alreadyApplied?: boolean }> {
   const body = JSON.stringify(payload);
+  const hasExpressApi = Boolean(
+    (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '')
+  );
 
   try {
     const edgeRes = await edgeFetch('confirm-razorpay-payment', {
       method: 'POST',
       body,
     });
-    const edgeBody = await edgeRes.json();
+    const edgeBody = await edgeRes.json().catch(() => ({}));
     if (edgeRes.ok && edgeBody.session && edgeBody.txnCode) {
       return {
         session: edgeBody.session as AuthSession,
@@ -89,27 +92,35 @@ export async function confirmRazorpayPaymentViaApi(
         alreadyApplied: Boolean(edgeBody.alreadyApplied),
       };
     }
-  } catch {
-    // Fall through to Express
+    // ERR-101: on Amplify (no VITE_API_URL) never fall through to Express HTML.
+    if (!hasExpressApi) {
+      throw new Error(
+        (edgeBody as { error?: string }).error ||
+          `Payment confirmation failed (${edgeRes.status}).`
+      );
+    }
+  } catch (e) {
+    if (!hasExpressApi) throw e;
   }
 
   const res = await apiFetch('/api/razorpay/confirm-payment', {
     method: 'POST',
     body,
   });
-  const result = await res.json();
-  if (!res.ok) throw new Error(result.error || 'Failed to confirm payment.');
-  if (!result.session || !result.txnCode) {
+  const result = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((result as { error?: string }).error || 'Failed to confirm payment.');
+  if (!(result as { session?: unknown }).session || !(result as { txnCode?: unknown }).txnCode) {
     throw new Error('Payment confirmed but session was incomplete.');
   }
   return {
-    session: result.session as AuthSession,
-    txnCode: String(result.txnCode),
-    alreadyApplied: Boolean(result.alreadyApplied),
+    session: (result as { session: AuthSession }).session,
+    txnCode: String((result as { txnCode: string }).txnCode),
+    alreadyApplied: Boolean((result as { alreadyApplied?: boolean }).alreadyApplied),
   };
 }
 
-/** Soft client notes for failed/pending only — success rows are inserted by the server. */
+/** Soft client notes for pending only — success rows are inserted by the server.
+ *  ERR-108: RLS blocks status=failed; always insert pending. */
 export async function recordTransaction(input: {
   txnCode: string;
   planId: PlanId;
@@ -130,10 +141,15 @@ export async function recordTransaction(input: {
     plan_id: input.planId,
     billing: input.billing,
     amount_label: input.amountLabel ?? null,
-    status: input.status,
+    status: 'pending',
     razorpay_order_id: input.razorpayOrderId ?? null,
-    razorpay_payment_id: input.razorpayPaymentId ?? null,
-    message: input.message ?? null,
+    // RLS: razorpay_payment_id must be null on client inserts
+    razorpay_payment_id: null,
+    message:
+      input.message ||
+      (input.status === 'failed'
+        ? `Failed${input.razorpayPaymentId ? ` (payment ${input.razorpayPaymentId})` : ''}`
+        : null),
   });
   if (error) {
     console.warn('Failed to record client transaction note:', error.message);

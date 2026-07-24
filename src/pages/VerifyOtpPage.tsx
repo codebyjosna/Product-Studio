@@ -34,6 +34,11 @@ export function VerifyOtpPage() {
     }
     if (!pendingSignup || pendingSignup.email !== email) {
       void hydratePendingSignup(email);
+      return;
+    }
+    // ERR-129: honor OTP expiry
+    if (pendingSignup.expiresAt && Date.now() > pendingSignup.expiresAt) {
+      setError('Code expired. Request a new one.');
     }
   }, [email, pendingSignup, hydratePendingSignup, navigate]);
 
@@ -78,6 +83,10 @@ export function VerifyOtpPage() {
 
   const submitCode = async (code: string) => {
     setError(null);
+    if (pendingSignup?.expiresAt && Date.now() > pendingSignup.expiresAt) {
+      setError('Code expired. Request a new one.');
+      return;
+    }
     setLoading(true);
     try {
       const session = await verifySignUpOtp(code, email);

@@ -4,6 +4,7 @@ import {
   applyPlanForUser,
   getSupabaseAdmin,
   normalizePlanId,
+  profileToSession,
   type PlanId,
 } from './supabase';
 import { computeCheckoutTotals, getFiscalForCountryName, getPlanPriceUsd } from './pricing';
@@ -152,6 +153,22 @@ export async function confirmRazorpayAndApplyPlan(input: {
 
   const admin = getSupabaseAdmin();
 
+  // ERR-147: if success txn exists but plan was never applied, finish apply without resetting on match.
+  const ensurePlan = async (userId: string, targetPlan: PlanId) => {
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+    if (!profile) {
+      throw Object.assign(new Error('Profile not found.'), { status: 404 });
+    }
+    if (normalizePlanId(String(profile.plan_id)) === targetPlan) {
+      return profileToSession(profile);
+    }
+    return applyPlanForUser(userId, targetPlan);
+  };
+
   const { data: existing } = await admin
     .from('transactions')
     .select('*')
@@ -160,12 +177,9 @@ export async function confirmRazorpayAndApplyPlan(input: {
     .maybeSingle();
 
   if (existing) {
-    const session = await applyPlanForUser(input.userId, existing.plan_id as PlanId);
-    return {
-      session,
-      txnCode: existing.txn_code,
-      alreadyApplied: true,
-    };
+    const targetPlan = normalizePlanId(String(existing.plan_id || planId));
+    const session = await ensurePlan(input.userId, targetPlan);
+    return { session, txnCode: existing.txn_code, alreadyApplied: true };
   }
 
   const keyId = process.env.RAZORPAY_KEY_ID!;
@@ -179,10 +193,12 @@ export async function confirmRazorpayAndApplyPlan(input: {
   const payment = (await payRes.json()) as {
     status?: string;
     order_id?: string;
+    amount?: number;
+    currency?: string;
     notes?: { userId?: string; planId?: string; billing?: string };
   };
 
-  if (payment.status !== 'captured' && payment.status !== 'authorized') {
+  if (payment.status !== 'captured') {
     throw Object.assign(new Error(`Payment not successful (${payment.status || 'unknown'}).`), {
       status: 402,
     });
@@ -190,36 +206,68 @@ export async function confirmRazorpayAndApplyPlan(input: {
   if (payment.order_id !== input.razorpayOrderId) {
     throw Object.assign(new Error('Payment order mismatch.'), { status: 400 });
   }
-  if (payment.notes?.userId && payment.notes.userId !== input.userId) {
+  if (!payment.notes?.userId || payment.notes.userId !== input.userId) {
     throw Object.assign(new Error('Payment belongs to another user.'), { status: 403 });
   }
-  if (payment.notes?.planId && payment.notes.planId !== planId) {
+  if (!payment.notes?.planId || payment.notes.planId !== planId) {
     throw Object.assign(new Error('Payment plan mismatch.'), { status: 400 });
   }
+  if (payment.notes?.billing && payment.notes.billing !== (input.billing === 'annual' ? 'annual' : 'monthly')) {
+    throw Object.assign(new Error('Payment billing mismatch.'), { status: 400 });
+  }
 
-  const session = await applyPlanForUser(input.userId, planId);
+  const billing = input.billing === 'annual' ? 'annual' : 'monthly';
+  // ERR-145: receipt from Razorpay only
+  const serverAmountLabel =
+    typeof payment.amount === 'number' && payment.currency
+      ? `${String(payment.currency).toUpperCase()} ${(Number(payment.amount) / 100).toFixed(2)}`
+      : null;
+
   const txnCode = `PS${Date.now().toString(36).toUpperCase()}${Math.random()
     .toString(36)
     .slice(2, 6)
     .toUpperCase()}`.slice(0, 16);
 
+  // ERR-146: claim payment id before apply_plan
   const { error: txnError } = await admin.from('transactions').insert({
     user_id: input.userId,
     txn_code: txnCode,
     plan_id: planId,
-    billing: input.billing === 'annual' ? 'annual' : 'monthly',
-    amount_label: input.amountLabel ?? null,
+    billing,
+    amount_label: serverAmountLabel,
     status: 'success',
     razorpay_order_id: input.razorpayOrderId,
     razorpay_payment_id: input.razorpayPaymentId,
     message: 'Payment verified',
   });
 
-  if (txnError && !/duplicate|unique/i.test(txnError.message)) {
-    console.error('transaction insert failed after plan apply:', txnError.message);
+  if (txnError) {
+    if (/duplicate|unique/i.test(txnError.message)) {
+      const { data: raced } = await admin
+        .from('transactions')
+        .select('*')
+        .eq('razorpay_payment_id', input.razorpayPaymentId)
+        .eq('status', 'success')
+        .maybeSingle();
+      const targetPlan = normalizePlanId(String(raced?.plan_id || planId));
+      const session = await ensurePlan(input.userId, targetPlan);
+      return { session, txnCode: raced?.txn_code || txnCode, alreadyApplied: true };
+    }
+    throw Object.assign(new Error(txnError.message || 'Could not record payment.'), { status: 500 });
   }
 
-  return { session, txnCode, alreadyApplied: false };
+  try {
+    const session = await applyPlanForUser(input.userId, planId);
+    return { session, txnCode, alreadyApplied: false };
+  } catch (applyErr) {
+    // ERR-147: unclaim so retry can re-apply
+    await admin
+      .from('transactions')
+      .delete()
+      .eq('razorpay_payment_id', input.razorpayPaymentId)
+      .eq('txn_code', txnCode);
+    throw applyErr;
+  }
 }
 
 export async function consumeTokensForUser(userId: string, cost: number) {
@@ -227,38 +275,30 @@ export async function consumeTokensForUser(userId: string, cost: number) {
     throw Object.assign(new Error('Invalid token cost.'), { status: 400 });
   }
   const admin = getSupabaseAdmin();
-  const { data: row, error: readError } = await admin
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
-  if (readError || !row) {
-    throw Object.assign(new Error('Profile not found.'), { status: 404 });
+  const { data, error } = await admin.rpc('consume_tokens_for_user', {
+    p_user_id: userId,
+    p_cost: cost,
+  });
+  if (error) {
+    if (/insufficient_tokens/i.test(error.message)) {
+      throw Object.assign(new Error('insufficient_tokens'), { status: 402 });
+    }
+    if (/profile_not_found/i.test(error.message)) {
+      throw Object.assign(new Error('Profile not found.'), { status: 404 });
+    }
+    throw Object.assign(new Error(error.message || 'Token update failed.'), { status: 500 });
   }
-  if (row.tokens == null) {
-    return row;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) {
+    throw Object.assign(new Error('Token update failed.'), { status: 500 });
   }
-  if (row.tokens < cost) {
-    throw Object.assign(new Error('insufficient_tokens'), { status: 402 });
-  }
-  const { data: updated, error } = await admin
-    .from('profiles')
-    .update({ tokens: row.tokens - cost })
-    .eq('id', userId)
-    .select('*')
-    .single();
-  if (error || !updated) {
-    throw Object.assign(new Error(error?.message || 'Token update failed.'), { status: 500 });
-  }
-  return updated;
+  return row;
 }
 
 export async function refundTokensForUser(userId: string, cost: number) {
   if (!Number.isFinite(cost) || cost <= 0) return;
   const admin = getSupabaseAdmin();
-  const { data: row } = await admin.from('profiles').select('tokens').eq('id', userId).maybeSingle();
-  if (!row || row.tokens == null) return;
-  await admin.from('profiles').update({ tokens: row.tokens + cost }).eq('id', userId);
+  await admin.rpc('refund_tokens_for_user', { p_user_id: userId, p_cost: cost });
 }
 
 export function userIdFromAuthed(req: AuthedRequest): string | null {

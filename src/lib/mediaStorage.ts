@@ -19,8 +19,6 @@ export interface UploadResult {
   path: string;
   signedUrl: string;
   asset: MediaAssetRow | null;
-  /** Present when storage succeeded but media_assets insert failed. */
-  metaWarning?: string;
 }
 
 /** Upload a file to the user's folder in a private bucket and record metadata. */
@@ -50,6 +48,7 @@ export async function uploadUserMedia(
     .createSignedUrl(path, 60 * 60 * 24 * 7);
 
   if (signError || !signed?.signedUrl) {
+    await supabase.storage.from(bucket).remove([path]);
     throw new Error(signError?.message || 'Could not create signed URL.');
   }
 
@@ -67,18 +66,17 @@ export async function uploadUserMedia(
     .select()
     .single();
 
-  let metaWarning: string | undefined;
+  // ERR-125: delete storage object if metadata insert fails (no orphans)
   if (metaError) {
-    metaWarning = `Media uploaded, but metadata save failed: ${metaError.message}`;
-    console.warn(metaWarning);
+    await supabase.storage.from(bucket).remove([path]);
+    throw new Error(`Media metadata save failed: ${metaError.message}`);
   }
 
   return {
     bucket,
     path,
     signedUrl: signed.signedUrl,
-    asset: asset ?? null,
-    metaWarning,
+    asset,
   };
 }
 

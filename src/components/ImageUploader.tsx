@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, X, Loader2 } from 'lucide-react';
 import { SuggestionChip, MediaSelection } from '../data.js';
-import { fileToDownscaledDataUrl } from '../images.js';
+import { fileToDownscaledDataUrl, dataUrlToInline } from '../images.js';
 import { useAuth } from '../auth/AuthContext';
 import { apiFetch, readApiJson } from '../lib/api';
 import { uploadUserMedia } from '../lib/mediaStorage';
@@ -120,13 +120,35 @@ export function ImageUploader({
 
     try {
       const dataUrl = await fileToDownscaledDataUrl(picked[0]);
+      const uploadId = `upload-${Date.now()}`;
       onSelect({
-        id: `upload-${Date.now()}`,
+        id: uploadId,
         source: 'upload',
         images: [dataUrl],
         description: `Uploaded reference photo`,
       });
       setError(null);
+
+      // ERR-122: describe uploaded reference for better prompts
+      void (async () => {
+        try {
+          const inline = dataUrlToInline(dataUrl);
+          const res = await apiFetch('/api/describe', {
+            method: 'POST',
+            body: JSON.stringify({ type, images: [inline] }),
+          });
+          const data = await readApiJson<{ description?: string; error?: string }>(res);
+          if (res.ok && data.description?.trim()) {
+            onSelect((prev) =>
+              prev && prev.id === uploadId
+                ? { ...prev, description: data.description!.trim() }
+                : prev
+            );
+          }
+        } catch (err) {
+          console.warn('Describe after upload skipped:', err);
+        }
+      })();
 
       // Persist original file to Supabase Storage (non-blocking for studio UX)
       const bucket = type === 'product' ? 'product-uploads' : 'atmosphere-uploads';

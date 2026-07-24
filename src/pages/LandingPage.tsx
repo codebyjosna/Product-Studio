@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, ArrowUp } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { SeoHead } from '../components/SeoHead';
 import { LandingSeoContent } from '../components/LandingSeoContent';
@@ -10,18 +10,27 @@ import { SITE_NAME } from '../seo/config';
 export function LandingPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [brief, setBrief] = React.useState('');
 
-  const goStudio = () => {
+  const goStudio = (withBrief?: string) => {
+    if (withBrief?.trim()) {
+      try {
+        sessionStorage.setItem('ps_landing_brief', withBrief.trim());
+      } catch {
+        /* ignore */
+      }
+    }
     if (user) navigate(`/${user.userId}`);
     else navigate('/studio');
   };
+
+  const firstName = (user?.name || '').trim().split(/\s+/)[0];
 
   return (
     <div className="app-shell min-h-screen w-full flex flex-col font-sans text-snow">
       <SeoHead page="home" />
       <LandingSeoContent />
 
-      {/* Header */}
       <header
         role="banner"
         className="relative z-20 flex items-center justify-between gap-4 px-6 md:px-10 h-14 md:h-16"
@@ -30,7 +39,7 @@ export function LandingPage() {
           to="/"
           title="Product Studio — AI Product Video Generator home"
           aria-label="Product Studio home"
-          className="text-lg md:text-xl font-extrabold tracking-tight text-snow hover:text-accent transition-colors"
+          className="text-lg md:text-xl font-extrabold tracking-tight text-snow hover:opacity-90 transition-opacity"
         >
           {SITE_NAME}
         </Link>
@@ -38,150 +47,120 @@ export function LandingPage() {
           type="button"
           onClick={() => navigate(user ? `/${user.userId}` : '/signin')}
           aria-label={user ? 'Open your Product Studio workspace' : 'Sign in to Product Studio'}
-          className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold tracking-wide text-ink bg-accent hover:bg-accent-dim transition-colors rounded-md shadow-[0_0_0_1px_rgba(45,212,191,0.3)]"
+          className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold tracking-wide text-ink bg-white hover:bg-fog transition-colors rounded-full"
         >
           {user ? 'Open studio' : 'Sign in'}
         </button>
       </header>
 
-      {/* Hero — one composition */}
       <main id="main-content" role="main" className="relative flex-1 flex flex-col">
         <section
           aria-labelledby="landing-hero-heading"
-          className="relative min-h-[calc(100vh-3.5rem)] md:min-h-[calc(100vh-4rem)] flex flex-col justify-end overflow-hidden"
+          className="relative min-h-[calc(100vh-3.5rem)] md:min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center px-6 overflow-hidden"
         >
-          {/* Full-bleed visual plane (decorative) */}
-          <div className="absolute inset-0" aria-hidden="true">
-            <div className="absolute inset-0 bg-[#070b12]" />
-            <motion.div
-              className="absolute inset-0"
-              initial={{ opacity: 0.7, scale: 1.04 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
-              style={{
-                backgroundImage: `
-                  radial-gradient(ellipse 70% 55% at 72% 38%, rgba(45, 212, 191, 0.28), transparent 58%),
-                  radial-gradient(ellipse 45% 40% at 18% 62%, rgba(56, 189, 248, 0.14), transparent 55%),
-                  linear-gradient(115deg, #070b12 0%, #0a121c 42%, #0c1a22 100%)
-                `,
-              }}
-            />
-            {/* Soft horizon / stage light — edge-to-edge, not a card */}
-            <motion.div
-              className="absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-ink via-ink/80 to-transparent"
-              initial={{ opacity: 0.6 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 1 }}
-            />
-            <motion.div
-              className="absolute left-1/2 top-[28%] h-[min(42vw,280px)] w-[min(70vw,520px)] -translate-x-1/2 rounded-full bg-accent/20 blur-[90px]"
-              animate={{ opacity: [0.35, 0.65, 0.35], scale: [1, 1.06, 1] }}
-              transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-            />
-          </div>
+          <motion.div
+            className="pill-badge mb-8"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45 }}
+          >
+            <span className="pill-new">New</span>
+            <span>Cinematic AI product reels</span>
+            <span className="text-white/40">→</span>
+          </motion.div>
 
-          <div className="relative z-10 px-6 md:px-10 pb-16 md:pb-24 pt-28 md:pt-0 max-w-3xl">
-            <motion.p
-              className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent mb-5"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
+          <motion.h1
+            id="landing-hero-heading"
+            className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-snow text-center leading-[1.05]"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.65, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {SITE_NAME}
+          </motion.h1>
+
+          <motion.p
+            className="mt-5 text-lg md:text-xl text-white/55 text-center max-w-xl leading-relaxed"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.22 }}
+          >
+            {firstName
+              ? `What should we create, ${firstName}?`
+              : 'Turn product photos into campaign-ready vibe reels.'}
+          </motion.p>
+
+          <motion.form
+            className="command-bar mt-10"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, delay: 0.32 }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              goStudio(brief);
+            }}
+          >
+            <input
+              value={brief}
+              onChange={(e) => setBrief(e.target.value)}
+              placeholder="Create a cinematic reel for my product…"
+              aria-label="Describe your product video"
+            />
+            <button
+              type="submit"
+              className="shrink-0 w-10 h-10 rounded-full bg-white text-ink flex items-center justify-center hover:bg-fog transition-colors"
+              aria-label="Get started"
             >
-              AI product video studio
-            </motion.p>
-            <motion.h1
-              id="landing-hero-heading"
-              className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-snow leading-[1.05]"
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.65, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+              <ArrowUp className="w-5 h-5" strokeWidth={2.5} />
+            </button>
+          </motion.form>
+
+          <motion.div
+            className="mt-8 flex flex-wrap items-center justify-center gap-3"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.45 }}
+          >
+            <button
+              type="button"
+              onClick={() => goStudio()}
+              className="group inline-flex items-center gap-2 text-sm font-medium text-white/50 hover:text-sky-300 transition-colors"
             >
-              {SITE_NAME}
-            </motion.h1>
-            <motion.p
-              className="mt-5 text-base md:text-lg text-fog leading-relaxed max-w-xl"
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.55, delay: 0.28 }}
-            >
-              Turn product photos into cinematic marketing reels — atmosphere, motion, and
-              campaign-ready cuts in one studio.
-            </motion.p>
-            <motion.div
-              className="mt-9 flex flex-wrap items-center gap-3"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.4 }}
-            >
-              <button
-                type="button"
-                onClick={goStudio}
-                aria-label="Get started with the AI product video generator studio"
-                title="Open the AI product video studio"
-                className="group inline-flex items-center gap-2.5 px-6 py-3.5 rounded-lg bg-accent text-ink text-sm font-semibold tracking-wide hover:bg-accent-dim transition-colors shadow-[0_0_0_1px_rgba(45,212,191,0.35),0_16px_48px_rgba(45,212,191,0.18)]"
+              Open full studio
+              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+            </button>
+            {!user && (
+              <Link
+                to="/signup"
+                className="text-sm font-medium text-white/40 hover:text-snow transition-colors"
               >
-                Get started
-                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-              </button>
-              {!user && (
-                <Link
-                  to="/signup"
-                  title="Create a Product Studio account"
-                  aria-label="Create a Product Studio account"
-                  className="inline-flex items-center px-5 py-3.5 rounded-lg border border-line-strong text-sm font-semibold text-fog hover:text-snow hover:border-accent/40 transition-colors"
-                >
-                  Create account
-                </Link>
-              )}
-            </motion.div>
-          </div>
+                Create account
+              </Link>
+            )}
+          </motion.div>
         </section>
       </main>
 
-      {/* Footer */}
-      <footer role="contentinfo" className="relative z-10 border-t border-line/80 bg-panel/50 backdrop-blur-xl">
-        <div className="mx-auto max-w-6xl px-6 md:px-10 py-8 md:py-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+      <footer role="contentinfo" className="relative z-10 border-t border-white/8 bg-black/20 backdrop-blur-xl">
+        <div className="mx-auto max-w-6xl px-6 md:px-10 py-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div>
             <p className="text-sm font-semibold text-snow">{SITE_NAME}</p>
-            <p className="mt-1 text-xs text-mist">
-              Cinematic product reels from still photography.
-            </p>
+            <p className="mt-1 text-xs text-white/40">Cinematic product reels from still photography.</p>
           </div>
           <nav aria-label="Legal and support" className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <Link
-              to="/terms"
-              title="Terms and Conditions"
-              className="text-sm text-mist hover:text-accent transition-colors"
-            >
-              Terms and Conditions
+            <Link to="/terms" className="text-sm text-white/40 hover:text-sky-300 transition-colors">
+              Terms
             </Link>
-            <Link
-              to="/privacy"
-              title="Privacy Policy"
-              className="text-sm text-mist hover:text-accent transition-colors"
-            >
-              Privacy Policy
+            <Link to="/privacy" className="text-sm text-white/40 hover:text-sky-300 transition-colors">
+              Privacy
             </Link>
-            <Link
-              to="/refund"
-              title="Refund and Cancellation Policy"
-              className="text-sm text-mist hover:text-accent transition-colors"
-            >
-              Refund &amp; Cancellation
+            <Link to="/refund" className="text-sm text-white/40 hover:text-sky-300 transition-colors">
+              Refund
             </Link>
-            <Link
-              to="/contact"
-              title="Contact Us"
-              className="text-sm text-mist hover:text-accent transition-colors"
-            >
-              Contact Us
+            <Link to="/contact" className="text-sm text-white/40 hover:text-sky-300 transition-colors">
+              Contact
             </Link>
           </nav>
-        </div>
-        <div className="border-t border-line/60 px-6 md:px-10 py-4">
-          <p className="mx-auto max-w-6xl text-[11px] text-mist/70">
-            © {new Date().getFullYear()} {SITE_NAME}. All rights reserved.
-          </p>
         </div>
       </footer>
     </div>

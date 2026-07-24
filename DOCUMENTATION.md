@@ -123,18 +123,19 @@ The app uses a multi-step pipeline powered by Google's Gemini models:
 
 | Layer | Choice |
 |-------|--------|
-| Server | **Express** (`server.ts`) |
-| AI SDK | **`@google/genai`** |
-| Payments | **Razorpay** Node SDK + Checkout.js |
-| Env | **dotenv** |
-| Prod bundle | **esbuild** → `dist/server.cjs` |
+| Local / optional Node | **Express** (`server.ts`) |
+| Production AI + billing APIs | **Supabase Edge Functions** (`studio-api`, Razorpay confirm/order, etc.) |
+| AI SDK (Express) | **`@google/genai`** |
+| AI (Edge) | Gemini REST via `fetch` |
+| Payments | **Razorpay** (Edge when Amplify static; Express when `VITE_API_URL` / local) |
+| Env | **dotenv** (local); Amplify + Supabase secrets (prod) |
+| Optional Node bundle | **esbuild** → `server-build/server.cjs` |
 | Dev runner | **tsx** |
 
 ### Architecture notes
 
-- SPA frontend talks to `/api/*` on the same Express host.
-- In development, Express mounts Vite middleware (HMR).
-- In production, Express serves `dist/` static assets and SPA fallback.
+- **Local (`npm run dev`):** SPA talks to same-origin Express `/api/*` (Vite middleware + HMR).
+- **Production (Amplify static):** when `PROD && !VITE_API_URL`, the client routes `/api/*` to Edge `studio-api` via `x-studio-path` (`src/lib/api.ts`).
 - Auth, plans, tokens, FX, fiscal, and checkout drafts are persisted in **Supabase Postgres** (not browser storage).
 - Route modules are **lazy-loaded**; every navigation shows a **skeleton** first.
 
@@ -436,7 +437,7 @@ Requires a valid checkout draft; otherwise redirects back to order summary.
 ### Notes
 
 - Razorpay keys must be set in the environment for Checkout to open.
-- Amplify **static-only** hosting cannot run the Express order API; deploy the Node server (or equivalent) for payments and AI.
+- On **Amplify static** hosting, create/confirm order go through **Supabase Edge** (`create-razorpay-order`, `confirm-razorpay-payment`). Local Express billing remains for `npm run dev` / optional Node deploy.
 
 ---
 
@@ -444,6 +445,7 @@ Requires a valid checkout draft; otherwise redirects back to order summary.
 
 | Method | Path | Role |
 |--------|------|------|
+| `POST` | `/api/describe` | Vision description for uploaded references |
 | `POST` | `/api/generate-image` | Product/atmosphere image from prompt |
 | `POST` | `/api/generate-atmosphere` | Text setting → Flash Lite prompt → atmosphere image |
 | `POST` | `/api/generate-prompt` | Vision + cinematic directive |
@@ -454,7 +456,7 @@ Requires a valid checkout draft; otherwise redirects back to order summary.
 | `POST` | `/api/razorpay/create-order` | Payment order |
 | `GET` | `/api/razorpay/config` | Razorpay public config |
 
-(Additional legacy `/api/generate` helpers may exist in `server.ts` for related image flows.)
+In production without `VITE_API_URL`, these paths are served by Edge `studio-api` (and Razorpay Edge functions), not Express.
 
 ---
 
@@ -470,7 +472,7 @@ Production build:
 
 ```bash
 npm run build
-npm start                   # serves dist + API via dist/server.cjs
+npm start                   # serves dist + API via server-build/server.cjs (when configured)
 ```
 
 Typecheck:

@@ -1,16 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
+import { corsHeadersFor } from '../_shared/cors.ts'
 
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type, x-cron-secret',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
-
-function json(body: unknown, status = 200) {
+function json(req: Request, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...corsHeadersFor(req), 'Content-Type': 'application/json' },
   })
 }
 
@@ -27,16 +21,16 @@ function isAuthorized(req: Request): boolean {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
-  if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeadersFor(req) })
+  if (req.method !== 'POST') return json(req, { error: 'Method not allowed' }, 405)
 
   if (!isAuthorized(req)) {
-    return json({ error: 'Unauthorized' }, 401)
+    return json(req, { error: 'Unauthorized' }, 401)
   }
 
   try {
     const apiKey = Deno.env.get('EXCHANGE_RATE_API_KEY')
-    if (!apiKey) return json({ error: 'EXCHANGE_RATE_API_KEY not configured' }, 500)
+    if (!apiKey) return json(req, { error: 'EXCHANGE_RATE_API_KEY not configured' }, 500)
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -45,7 +39,7 @@ Deno.serve(async (req) => {
     const fxRes = await fetch(`https://v6.exchangerate-api.com/v6/${apiKey}/latest/USD`)
     if (!fxRes.ok) {
       const text = await fxRes.text()
-      return json({ error: 'ExchangeRate API failed', detail: text }, 502)
+      return json(req, { error: 'ExchangeRate API failed', detail: text }, 502)
     }
 
     const payload = await fxRes.json() as {
@@ -57,7 +51,7 @@ Deno.serve(async (req) => {
     }
 
     if (payload.result !== 'success' || !payload.conversion_rates) {
-      return json({ error: 'Unexpected ExchangeRate API response', payload }, 502)
+      return json(req, { error: 'Unexpected ExchangeRate API response', payload }, 502)
     }
 
     const rates = payload.conversion_rates
@@ -73,7 +67,7 @@ Deno.serve(async (req) => {
         .select('id')
 
       if (error) {
-        return json({ error: error.message, currencyCode }, 500)
+        return json(req, { error: error.message, currencyCode }, 500)
       }
       updated += data?.length ?? 0
     }
@@ -94,7 +88,7 @@ Deno.serve(async (req) => {
       { onConflict: 'key' },
     )
 
-    return json({
+    return json(req, {
       ok: true,
       base: payload.base_code ?? 'USD',
       currencies: Object.keys(rates).length,
@@ -102,6 +96,6 @@ Deno.serve(async (req) => {
       lastUpdateUtc: payload.time_last_update_utc,
     })
   } catch (e) {
-    return json({ error: e instanceof Error ? e.message : 'FX update failed' }, 500)
+    return json(req, { error: e instanceof Error ? e.message : 'FX update failed' }, 500)
   }
 })

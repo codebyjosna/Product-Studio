@@ -1,83 +1,99 @@
-# Product Studio — ERRORS.md (remediation log)
+# Product Studio — ERRORS.md
 
-**Audit date:** 2026-07-23  
-**Remediation date:** 2026-07-23  
+**Audits:** 2026-07-24 (remediate → claim GO → **re-audit**)  
 
-All original audit findings were addressed in code/config except a few **operational residuals** that require hosting/assets outside the repo (listed at the bottom).
-
----
-
-## Fixes applied
-
-| ID | Status | What changed |
-|----|--------|----------------|
-| ERR-001 | FIXED | `apply-plan` Edge + Express return 403; plans only via verified Razorpay confirm |
-| ERR-002 | FIXED | Transaction summary no longer calls `setPlan`; server applies plan on confirm |
-| ERR-003 | FIXED | Checkout handler sends `payment_id` / `order_id` / `signature` to confirm API |
-| ERR-004 | FIXED | Order amount computed server-side from USD × FX × tax (Edge + Express) |
-| ERR-005 | FIXED | Gemini routes require auth; server charges tokens on video/image/edit |
-| ERR-006 | FIXED | Amplify builds client-only; generation via Edge `studio-api` in PROD; optional `VITE_API_URL` for Node |
-| ERR-007 | FIXED | Server bundle → `server-build/` (not published in Amplify `dist`) |
-| ERR-008 | FIXED | Upgrade / order / final summary require sign-in |
-| ERR-009 | FIXED | Tokens charged on server after validation; refunded on generation failure |
-| ERR-010 | FIXED | `consume_tokens` requires `p_cost > 0` |
-| ERR-011 | FIXED | Server-side token debit on metered routes |
-| ERR-012 | FIXED | Video/file routes check ownership (`generation_files` + in-memory map) |
-| ERR-013 | FIXED | Clients can only insert `pending` transactions; success inserts are service_role |
-| ERR-014 | FIXED | `create-order` requires auth |
-| ERR-015 | FIXED | No client `amountMinor` fallback path |
-| ERR-016 | FIXED | Admin client requires service role key only |
-| ERR-017 | FIXED | Migration `004` grants + `apply_plan` execute for service_role |
-| ERR-018 | FIXED | `/new-password` allows recovery session without OTP pending |
-| ERR-019 | FIXED | Amplify `customRules` SPA rewrite at root |
-| ERR-020 | FIXED | Poland → PLN |
-| ERR-021 | FIXED | Added CZ/HU/RO/BG/HR fiscal entries |
-| ERR-022 | FIXED | Missing FX throws (no silent `1`) |
-| ERR-023 | FIXED | `tsconfig` excludes `supabase/functions` |
-| ERR-024 | FIXED | Defaults/sitemap/robots → `https://www.codewix.in` |
-| ERR-025–027 | FIXED | Cron/vault already scheduled; FX function auth unchanged + documented |
-| ERR-028 | FIXED | JSON body limit 20mb; auth gates reduce abuse |
-| ERR-029 | FIXED | Added `supabase/seed.sql` |
-| ERR-030 | FIXED | config.toml comments + local redirect patterns; prod via Dashboard |
-| ERR-031 | FIXED | Navigation waits for `authReady` |
-| ERR-032 | FIXED | Poll cleanup on StudioPage |
-| ERR-033 | FIXED | ImageUploader respects disabled + 10MB max |
-| ERR-034 | FIXED | `public_url` no longer stores expiring signed URLs |
-| ERR-035 | FIXED | Token errors map to `error` reason |
-| ERR-036 | FIXED | Profile retry instead of fake tokens |
-| ERR-037 | FIXED | Success txns server-side with payment IDs |
-| ERR-038 | FIXED | Pending signup/reset honor `expiresAt` |
-| ERR-039 | FIXED | Studio `noindex` when authed |
-| ERR-040 | RESIDUAL | OG still SVG (`/og-image.svg`) — add PNG/JPG asset for crawlers |
-| ERR-041 | FIXED | Removed invalid SearchAction |
-| ERR-042 | FIXED | Signup removed from sitemap; robots Disallow kept |
-| ERR-043 | FIXED | Guests on `/:uuid` → `/studio` |
-| ERR-044 | FIXED | Removed `{{ .Token }}` hint |
-| ERR-045 | FIXED | Meta insert surfaces `metaWarning` |
-| ERR-046 | FIXED | Razorpay script load still gated on `window.Razorpay` |
-| ERR-047 | FIXED | Safer client error messages on API |
-| ERR-048 | FIXED | Script still defaults ref; env preferred |
-| ERR-049 | FIXED | Package name `product-studio` |
-| ERR-050 | FIXED | Cross-platform `clean` script |
-| ERR-051 | FIXED | One charge on `generate-video` / `generate-image` / `edit-video` |
-| ERR-052 | FIXED | 10MB upload check |
-| ERR-053 | FIXED | `env.example` documents `VITE_SITE_URL` + `VITE_API_URL` |
-| ERR-054 | ACCEPTED | CA/US tax remains simplified (GST / 0%) without a tax engine |
+Migration `009` + `010` applied. Edge redeployed for prior pass.
 
 ---
 
-## Residuals (ops / assets)
+## Verdict (this re-audit)
 
-1. **Generation on Amplify** — Client PROD builds call Supabase Edge `studio-api` (no Express required). Optional: set `VITE_API_URL` to a Node host instead.
-2. **Supabase Auth Dashboard** — Site URL `https://www.codewix.in`, Redirect URLs `https://www.codewix.in/**` (no localhost in production).
-3. **OG image** — Replace SVG with PNG/JPG (~1200×630) at `/og-image.png` and update `OG_IMAGE_PATH`.
-4. **Edge secrets** — `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` must be set on Supabase for checkout Edge Functions.
+**NO-GO.** Prior remediations mostly hold, but **3 new blockers** remain (1 CRITICAL, 2 HIGH). Do not treat payment confirm or Edge video soft-check as closed.
+
+| Area | Status |
+|------|--------|
+| ERR-147 / 104 / 144 / 107 / OTP / Razorpay notes / atomic tokens | **VERIFIED FIXED** |
+| ERR-122 / 124 / 125 / 129 / 133 / 134 / 135–136 | **VERIFIED FIXED** |
+| ERR-110 charge-after | **VERIFIED FIXED** |
+| ERR-110 soft balance | **BROKEN** (wrong column) → **ERR-148** |
+| Confirm ownership on replay | **NEW CRITICAL** → **ERR-149** |
+| Edge same-plan renewal | **NEW HIGH** → **ERR-150** |
+| ERR-040 OG PNG | **PARTIAL** (file exists, **untracked** → Amplify 404) |
 
 ---
 
-## New / updated surfaces
+## NEW — must fix
 
-- Migration: `supabase/migrations/004_security_hardening.sql`
-- Edge: `create-razorpay-order`, `confirm-razorpay-payment` (apply-plan locked)
-- Express: `/api/razorpay/confirm-payment`, authenticated generate routes
-- Client: `src/lib/api.ts` (`apiFetch` / `edgeFetch`)
+| ID | Sev | Finding | Impact | Fix |
+|----|-----|---------|--------|-----|
+| **ERR-149** | **CRITICAL** | Confirm short-circuit on existing success txn (and duplicate race) calls `ensurePlan*` for the **caller** and never checks `txn.user_id === auth.user.id`. Ownership notes are only enforced on the first-insert path. | Any logged-in user who obtains another user's Razorpay `order_id` / `payment_id` / `signature` (visible in Checkout / network) can replay confirm and receive the paid plan. Edge + Express. | On existing/raced success txn: if `existing.user_id !== user.id` → **403**. Only then `ensurePlan`. |
+| **ERR-148** | **HIGH** | Soft balance selects nonexistent `profiles.tokens_remaining`. Schema column is `tokens`. | **Prod Edge:** PostgREST error → assert fails → **all generate/edit video 404**. **Express:** ignores error → soft-check skipped (charge-after still protects tokens). | Select/compare `tokens` (enterprise null = unlimited). Redeploy `studio-api` + ship Express. |
+| **ERR-150** | **HIGH** | After a **new** success claim, Edge calls `ensurePlanApplied` which **skips** `apply_plan` when `plan_id` already matches. | Same-plan renewal on Amplify (Edge-only) does **not** refill tokens. Express first-claim correctly always `applyPlanForUser`. | On first successful claim path: always `apply_plan` (keep ensurePlan only for retry/orphan recovery). |
+
+---
+
+## Still open / partial
+
+| ID | Sev | Notes |
+|----|-----|-------|
+| **ERR-040** | MED | `public/og-image.png` on disk + HTML refs OK, but file is **git untracked** (`??`). Amplify from git → OG 404. Commit PNG (or generate in CI). |
+| ERR-129 residual | LOW | `NewPasswordPage` submit does not re-check `expiresAt` if tab left open past expiry. |
+| Edge `rememberOwnership` | MED | Returns early when `!fileId` — never stores `interaction_id` alone → edit ownership can 403 if URI parse fails. Express stores interaction anyway. |
+| Express `/api/generate` | LOW | Charges tokens without `enforceAiRateLimit` (legacy route). |
+
+---
+
+## Verified fixed (re-confirmed)
+
+| ID | Notes |
+|----|-------|
+| ERR-147 | ensurePlan on mismatch + delete claim on apply fail (Edge + Express) |
+| ERR-104 | Skip apply when plan already matches (retry path) |
+| ERR-110 charge-after | Video/edit: Omni success → then consume (no pre-charge timeout eat) |
+| ERR-122 | Upload → `/api/describe` |
+| ERR-124 | Rate limit on generation paths only; not file-status/video |
+| ERR-125 | Storage remove on sign/meta failure |
+| ERR-129 | OTP pages honor `expiresAt` (gate + submit) |
+| ERR-133 | FX cron URL from vault `project_url` (010) |
+| ERR-134 | CORS allowlist — no `*` |
+| ERR-135/136 | Docs: Edge prod + `server-build/server.cjs` |
+| Unpaid apply-plan | 403 Edge + Express |
+| OTP forge / mark verified | Hardened in 009 |
+| Razorpay captured + notes + unique payment id | Hold |
+| Edge-only Razorpay when no `VITE_API_URL` | Hold |
+| ERR-144 / 107 | Recovery-only reset; safe sign-in `from` |
+| Atomic token RPCs | Hold |
+| Atmosphere metered + typed 2× | Hold |
+| CSP / video `Cache-Control: private, no-store` | Hold |
+
+---
+
+## Evidence (new findings)
+
+**ERR-149** — no `user_id` check on existing txn:
+
+- `supabase/functions/confirm-razorpay-payment/index.ts` ~142–149, ~195–208  
+- `server/billing.ts` ~179–183, ~245–254  
+
+**ERR-148** — wrong column:
+
+- `studio-api/index.ts` `assertHasTokens` selects `tokens_remaining`  
+- `server.ts` generate-video / edit-video soft-check same  
+- Schema: `profiles.tokens` (`001_init.sql`, `database.types.ts`)
+
+**ERR-150** — Edge new claim:
+
+- `confirm-razorpay-payment/index.ts` ~213–214 uses `ensurePlanApplied` (skip if plan matches)  
+- Express `billing.ts` ~259–261 always `applyPlanForUser` on fresh claim  
+
+---
+
+## Go-live checklist
+
+- [ ] **ERR-149** confirm ownership on replay (must)  
+- [ ] **ERR-148** `tokens` column + redeploy `studio-api` (must — Edge video broken)  
+- [ ] **ERR-150** Edge always apply on first claim  
+- [ ] Commit `public/og-image.png`  
+- [ ] Amplify deploy + Razorpay smoke  
+- [ ] Vault `project_url` for FX cron  
+- [ ] Rotate exposed PATs  

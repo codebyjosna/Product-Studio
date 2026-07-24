@@ -9,6 +9,23 @@ interface NewPasswordState {
   email?: string;
 }
 
+/** True when the Supabase session came from recovery OTP / recovery email link. */
+function isRecoverySession(session: {
+  amr?: Array<{ method?: string }>;
+} | null): boolean {
+  if (!session) return false;
+  const amr = session.amr;
+  if (Array.isArray(amr) && amr.some((a) => /recovery|otp|magiclink/i.test(String(a?.method || '')))) {
+    return true;
+  }
+  if (typeof window !== 'undefined') {
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    if (/type=recovery/i.test(hash) || /type=recovery/i.test(search)) return true;
+  }
+  return false;
+}
+
 export function NewPasswordPage() {
   const { completePasswordReset, pendingReset, hydratePendingReset, authReady } = useAuth();
   const navigate = useNavigate();
@@ -39,7 +56,16 @@ export function NewPasswordPage() {
         pending = await hydratePendingReset(email);
       }
 
+      // ERR-144: only OTP-verified pending (from verifyResetOtp) OR a recovery session.
       if (pending?.otpVerified) {
+        if (pending.expiresAt && Date.now() > pending.expiresAt) {
+          if (!cancelled) {
+            setError('Reset code expired. Request a new one.');
+            setRecoveryAllowed(false);
+            setCheckingSession(false);
+          }
+          return;
+        }
         if (!cancelled) {
           setRecoveryAllowed(true);
           setCheckingSession(false);
@@ -50,15 +76,28 @@ export function NewPasswordPage() {
       if (isSupabaseConfigured()) {
         try {
           const { data } = await getSupabase().auth.getSession();
-          if (data.session) {
-            if (!cancelled) {
-              setRecoveryAllowed(true);
-              setCheckingSession(false);
+          const session = data.session;
+          const sessionEmail = session?.user?.email?.trim().toLowerCase();
+          if (session && sessionEmail && (!email || sessionEmail === email) && isRecoverySession(session as { amr?: Array<{ method?: string }> })) {
+            try {
+              await getSupabase().rpc('mark_auth_pending_verified', {
+                p_email: sessionEmail,
+                p_kind: 'reset',
+              });
+            } catch {
+              // pending must exist from startPasswordReset
             }
-            return;
+            const refreshed = await hydratePendingReset(sessionEmail);
+            if (refreshed?.otpVerified || isRecoverySession(session as { amr?: Array<{ method?: string }> })) {
+              if (!cancelled) {
+                setRecoveryAllowed(true);
+                setCheckingSession(false);
+              }
+              return;
+            }
           }
         } catch {
-          // fall through to redirect
+          // fall through
         }
       }
 
@@ -106,10 +145,7 @@ export function NewPasswordPage() {
   }
 
   return (
-    <AuthShell
-      title="New password"
-      subtitle={email ? `Choose a new password for ${email}` : 'Choose a new password'}
-    >
+    <AuthShell title="New password" subtitle="Choose a new password for your account">
       <AuthError message={error} />
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
@@ -119,7 +155,6 @@ export function NewPasswordPage() {
             value={password}
             onChange={setPassword}
             autoComplete="new-password"
-            placeholder="At least 6 characters"
           />
         </div>
         <div>
@@ -129,7 +164,6 @@ export function NewPasswordPage() {
             value={confirm}
             onChange={setConfirm}
             autoComplete="new-password"
-            placeholder="Re-enter password"
           />
         </div>
         <button
@@ -138,12 +172,12 @@ export function NewPasswordPage() {
           className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 font-mono text-xs font-bold uppercase tracking-widest text-ink bg-accent hover:bg-accent-dim rounded-lg transition-colors disabled:opacity-50"
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-          Save & continue
+          Save &amp; continue
         </button>
+        <p className="text-center text-xs text-mist">
+          <AuthLink to="/signin">Back to sign in</AuthLink>
+        </p>
       </form>
-      <p className="mt-6 text-sm text-mist text-center">
-        <AuthLink to="/signin">Back to sign in</AuthLink>
-      </p>
     </AuthShell>
   );
 }

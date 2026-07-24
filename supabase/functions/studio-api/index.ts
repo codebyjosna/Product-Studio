@@ -8,27 +8,23 @@ import {
   shotCeilingForDuration,
   toOmniAspectRatio,
 } from '../_shared/videoFormat.ts'
-
-const corsHeaders: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type, x-studio-path, range',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Expose-Headers': 'content-range, accept-ranges, content-length, content-type',
-}
+import { corsHeadersFor } from '../_shared/cors.ts'
 
 type InlineImage = { data: string; mimeType: string }
 
-function json(body: unknown, status = 200) {
+function json(req: Request, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: { ...corsHeadersFor(req), 'Content-Type': 'application/json' },
   })
 }
 
 function safeClientError(e: unknown, fallback: string) {
   const msg = e instanceof Error ? e.message : fallback
   if (/insufficient_tokens/i.test(msg)) return 'Insufficient tokens.'
+  if (/too many ai requests/i.test(msg) || /rate_limited/i.test(msg)) {
+    return 'Too many AI requests. Try again in a minute.'
+  }
   return fallback
 }
 
@@ -68,23 +64,54 @@ async function tokensPerGeneration(admin: SupabaseClient): Promise<number> {
 }
 
 async function consumeTokens(admin: SupabaseClient, userId: string, cost: number) {
-  const { data: row, error: readError } = await admin
-    .from('profiles')
-    .select('tokens')
-    .eq('id', userId)
-    .maybeSingle()
-  if (readError || !row) throw Object.assign(new Error('Profile not found.'), { status: 404 })
-  if (row.tokens == null) return
-  if (row.tokens < cost) throw Object.assign(new Error('insufficient_tokens'), { status: 402 })
-  const { error } = await admin.from('profiles').update({ tokens: row.tokens - cost }).eq('id', userId)
-  if (error) throw Object.assign(new Error(error.message), { status: 500 })
+  const { error } = await admin.rpc('consume_tokens_for_user', {
+    p_user_id: userId,
+    p_cost: cost,
+  })
+  if (error) {
+    if (/insufficient_tokens/i.test(error.message)) {
+      throw Object.assign(new Error('insufficient_tokens'), { status: 402 })
+    }
+    throw Object.assign(new Error(error.message || 'Token update failed.'), { status: 500 })
+  }
 }
 
 async function refundTokens(admin: SupabaseClient, userId: string, cost: number) {
   if (!Number.isFinite(cost) || cost <= 0) return
-  const { data: row } = await admin.from('profiles').select('tokens').eq('id', userId).maybeSingle()
-  if (!row || row.tokens == null) return
-  await admin.from('profiles').update({ tokens: row.tokens + cost }).eq('id', userId)
+  await admin.rpc('refund_tokens_for_user', { p_user_id: userId, p_cost: cost })
+}
+
+/** Soft balance check before long Omni renders (ERR-110 charge-after-success). */
+async function assertHasTokens(admin: SupabaseClient, userId: string, cost: number) {
+  const { data: profile, error } = await admin
+    .from('profiles')
+    .select('tokens_remaining, plan_id')
+    .eq('id', userId)
+    .maybeSingle()
+  if (error || !profile) {
+    throw Object.assign(new Error('Profile not found.'), { status: 404 })
+  }
+  if (String(profile.plan_id) === 'enterprise' && profile.tokens_remaining == null) return
+  const remaining = Number(profile.tokens_remaining)
+  if (!Number.isFinite(remaining) || remaining < cost) {
+    throw Object.assign(new Error('insufficient_tokens'), { status: 402 })
+  }
+}
+
+/** ERR-124: per-user sliding window (Postgres). */
+async function enforceRateLimit(admin: SupabaseClient, userId: string) {
+  const { error } = await admin.rpc('enforce_ai_rate_limit', {
+    p_user_id: userId,
+    p_max_per_window: 30,
+    p_window_seconds: 60,
+  })
+  if (error) {
+    if (/rate_limited/i.test(error.message)) {
+      throw Object.assign(new Error('Too many AI requests. Try again in a minute.'), { status: 429 })
+    }
+    // If migration 010 not applied yet, do not hard-fail generation.
+    console.warn('enforce_ai_rate_limit:', error.message)
+  }
 }
 
 async function rememberOwnership(
@@ -250,50 +277,73 @@ function normalizeStudioPath(req: Request): string {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  const cors = corsHeadersFor(req)
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
 
   try {
     const studioPath = normalizeStudioPath(req)
-    if (!studioPath) return json({ error: 'Missing x-studio-path' }, 400)
+    if (!studioPath) return json(req, { error: 'Missing x-studio-path' }, 400)
 
     const { userId } = await requireUser(req)
     const admin = adminClient()
 
-    // ---- Atmosphere ----
+    const meteredPaths = new Set([
+      '/api/generate-atmosphere',
+      '/api/generate-prompt',
+      '/api/describe',
+      '/api/generate-image',
+      '/api/generate-video',
+      '/api/edit-video',
+    ])
+    if (meteredPaths.has(studioPath)) {
+      await enforceRateLimit(admin, userId)
+    }
+
+    // ---- Atmosphere (metered — image generation) ----
     if (req.method === 'POST' && studioPath === '/api/generate-atmosphere') {
       const body = await req.json().catch(() => ({}))
       const input = typeof body.input === 'string' ? body.input.trim() : ''
-      if (!input) return json({ error: 'No atmosphere prompt provided' }, 400)
+      if (!input) return json(req, { error: 'No atmosphere prompt provided' }, 400)
 
-      const imagePrompt = await generateContent({
-        model: 'gemini-3.1-flash-lite',
-        parts: [{ text: `Setting: ${input}` }],
-        systemInstruction: ATMOSPHERE_DIRECTOR_SYSTEM_INSTRUCTION,
-        generationConfig: { maxOutputTokens: 512, temperature: 0.8 },
-      })
-      if (!imagePrompt) throw new Error('Failed to write an atmosphere prompt')
+      const cost = await tokensPerGeneration(admin)
+      let charged = false
+      try {
+        await consumeTokens(admin, userId, cost)
+        charged = true
 
-      const interaction = await createInteraction({
-        model: 'gemini-3.1-flash-lite-image',
-        input: [{ type: 'text', text: imagePrompt }],
-        response_format: {
-          type: 'image',
-          image_size: '1K',
-          aspect_ratio: '4:5',
-          mime_type: 'image/jpeg',
-        },
-        store: false,
-        background: false,
-        stream: false,
-      })
+        const imagePrompt = await generateContent({
+          model: 'gemini-3.1-flash-lite',
+          parts: [{ text: `Setting: ${input}` }],
+          systemInstruction: ATMOSPHERE_DIRECTOR_SYSTEM_INSTRUCTION,
+          generationConfig: { maxOutputTokens: 512, temperature: 0.8 },
+        })
+        if (!imagePrompt) throw new Error('Failed to write an atmosphere prompt')
 
-      const image = extractOutputImage(interaction)
-      let data = image.data
-      let mimeType = image.mimeType
-      if (!data && image.uri) ({ data, mimeType } = await fileUriToBase64(image.uri))
-      if (!data) throw new Error('gemini-3.1-flash-lite-image returned no image')
+        const interaction = await createInteraction({
+          model: 'gemini-3.1-flash-lite-image',
+          input: [{ type: 'text', text: imagePrompt }],
+          response_format: {
+            type: 'image',
+            image_size: '1K',
+            aspect_ratio: '4:5',
+            mime_type: 'image/jpeg',
+          },
+          store: false,
+          background: false,
+          stream: false,
+        })
 
-      return json({ image: { data, mimeType }, prompt: imagePrompt })
+        const image = extractOutputImage(interaction)
+        let data = image.data
+        let mimeType = image.mimeType
+        if (!data && image.uri) ({ data, mimeType } = await fileUriToBase64(image.uri))
+        if (!data) throw new Error('gemini-3.1-flash-lite-image returned no image')
+
+        return json(req, { image: { data, mimeType }, prompt: imagePrompt })
+      } catch (e) {
+        if (charged) await refundTokens(admin, userId, cost)
+        throw e
+      }
     }
 
     // ---- Prompt ----
@@ -328,14 +378,14 @@ Deno.serve(async (req) => {
         parts,
         systemInstruction,
       })
-      return json({ prompt })
+      return json(req, { prompt })
     }
 
     // ---- Describe ----
     if (req.method === 'POST' && studioPath === '/api/describe') {
       const body = await req.json().catch(() => ({}))
       const images: InlineImage[] = body.images || []
-      if (!images.length) return json({ error: 'No images provided' }, 400)
+      if (!images.length) return json(req, { error: 'No images provided' }, 400)
       const isAtmosphere = body.type === 'atmosphere'
       const productInstruction =
         `You write ultra-concise product descriptions for a premium product-film tool.
@@ -354,13 +404,13 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`
         systemInstruction: isAtmosphere ? atmosphereInstruction : productInstruction,
         generationConfig: { maxOutputTokens: 512, temperature: 0.7 },
       })
-      return json({ description })
+      return json(req, { description })
     }
 
     // ---- Generate image (uploader) ----
     if (req.method === 'POST' && studioPath === '/api/generate-image') {
       const body = await req.json().catch(() => ({}))
-      if (!body.prompt) return json({ error: 'Prompt is required' }, 400)
+      if (!body.prompt) return json(req, { error: 'Prompt is required' }, 400)
       const cost = await tokensPerGeneration(admin)
       let charged = false
       try {
@@ -389,122 +439,110 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`
         })
         if (!imageB64) {
           if (charged) await refundTokens(admin, userId, cost)
-          return json({ error: 'No image generated' }, 500)
+          return json(req, { error: 'No image generated' }, 500)
         }
-        return json({ imageUrl: `data:image/jpeg;base64,${imageB64}` })
+        return json(req, { imageUrl: `data:image/jpeg;base64,${imageB64}` })
       } catch (e) {
         if (charged) await refundTokens(admin, userId, cost)
         throw e
       }
     }
 
-    // ---- Generate video ----
+    // ---- Generate video (ERR-110: charge after Omni success) ----
     if (req.method === 'POST' && studioPath === '/api/generate-video') {
       const body = await req.json().catch(() => ({}))
       const { durationSec, aspectRatio } = normalizeVideoFormat(body)
       const omniAspect = toOmniAspectRatio(aspectRatio)
       const cost = await tokensPerGeneration(admin)
-      let charged = false
-      try {
-        await consumeTokens(admin, userId, cost)
-        charged = true
-        const productImages: InlineImage[] = body.productImages || []
-        const atmosphereImages: InlineImage[] = body.atmosphereImages || []
-        const timedPrompt =
-          `Output spec: aspect ${aspectRatio} (render container ${omniAspect}), total duration ~${durationSec} seconds.\n\n${body.prompt || ''}`
-        const interaction = await createInteraction({
-          model: 'gemini-omni-flash-preview',
-          input: [
-            ...productImages.map((img) => ({ type: 'image', data: img.data, mime_type: img.mimeType })),
-            ...atmosphereImages.map((img) => ({ type: 'image', data: img.data, mime_type: img.mimeType })),
-            { type: 'text', text: timedPrompt },
-          ],
-          response_format: { type: 'video', delivery: 'uri', aspect_ratio: omniAspect },
-          store: true,
-          background: false,
-          stream: false,
-        })
-        const uri = extractVideoUri(interaction)
-        if (!uri) throw new Error('No video URI returned from interaction.')
-        const fileId = fileIdFromUri(uri)
-        const interactionId = String(interaction.id || '')
-        await rememberOwnership(admin, userId, fileId, interactionId)
-        return json({ interactionId, uri, fileId, aspectRatio, durationSec, omniAspect })
-      } catch (e) {
-        if (charged) await refundTokens(admin, userId, cost)
-        throw e
-      }
+      await assertHasTokens(admin, userId, cost)
+      const productImages: InlineImage[] = body.productImages || []
+      const atmosphereImages: InlineImage[] = body.atmosphereImages || []
+      const timedPrompt =
+        `Output spec: aspect ${aspectRatio} (render container ${omniAspect}), total duration ~${durationSec} seconds.\n\n${body.prompt || ''}`
+      const interaction = await createInteraction({
+        model: 'gemini-omni-flash-preview',
+        input: [
+          ...productImages.map((img) => ({ type: 'image', data: img.data, mime_type: img.mimeType })),
+          ...atmosphereImages.map((img) => ({ type: 'image', data: img.data, mime_type: img.mimeType })),
+          { type: 'text', text: timedPrompt },
+        ],
+        response_format: { type: 'video', delivery: 'uri', aspect_ratio: omniAspect },
+        store: true,
+        background: false,
+        stream: false,
+      })
+      const uri = extractVideoUri(interaction)
+      if (!uri) throw new Error('No video URI returned from interaction.')
+      await consumeTokens(admin, userId, cost)
+      const fileId = fileIdFromUri(uri)
+      const interactionId = String(interaction.id || '')
+      await rememberOwnership(admin, userId, fileId, interactionId)
+      return json(req, { interactionId, uri, fileId, aspectRatio, durationSec, omniAspect })
     }
 
-    // ---- Edit video ----
+    // ---- Edit video (ERR-110: charge after Omni success) ----
     if (req.method === 'POST' && studioPath === '/api/edit-video') {
       const body = await req.json().catch(() => ({}))
       const previousInteractionId = body.previousInteractionId as string | undefined
       const instructions = body.instructions as string | undefined
       if (!previousInteractionId || !instructions) {
-        return json({ error: 'previousInteractionId and instructions are required' }, 400)
+        return json(req, { error: 'previousInteractionId and instructions are required' }, 400)
       }
       if (!(await userOwnsInteraction(admin, userId, previousInteractionId))) {
-        return json({ error: 'You do not own this video interaction.' }, 403)
+        return json(req, { error: 'You do not own this video interaction.' }, 403)
       }
       const cost = await tokensPerGeneration(admin)
-      let charged = false
-      try {
-        await consumeTokens(admin, userId, cost)
-        charged = true
-        const interaction = await createInteraction({
-          model: 'gemini-omni-flash-preview',
-          previous_interaction_id: previousInteractionId,
-          input: [{ type: 'text', text: instructions }],
-          response_format: { type: 'video', delivery: 'uri' },
-          store: true,
-          background: false,
-          stream: false,
-        })
-        const uri = extractVideoUri(interaction)
-        if (!uri) throw new Error('No video URI returned from interaction.')
-        const fileId = fileIdFromUri(uri)
-        const interactionId = String(interaction.id || '')
-        await rememberOwnership(admin, userId, fileId, interactionId)
-        return json({ interactionId, uri, fileId })
-      } catch (e) {
-        if (charged) await refundTokens(admin, userId, cost)
-        throw e
-      }
+      await assertHasTokens(admin, userId, cost)
+      const interaction = await createInteraction({
+        model: 'gemini-omni-flash-preview',
+        previous_interaction_id: previousInteractionId,
+        input: [{ type: 'text', text: instructions }],
+        response_format: { type: 'video', delivery: 'uri' },
+        store: true,
+        background: false,
+        stream: false,
+      })
+      const uri = extractVideoUri(interaction)
+      if (!uri) throw new Error('No video URI returned from interaction.')
+      await consumeTokens(admin, userId, cost)
+      const fileId = fileIdFromUri(uri)
+      const interactionId = String(interaction.id || '')
+      await rememberOwnership(admin, userId, fileId, interactionId)
+      return json(req, { interactionId, uri, fileId })
     }
 
     // ---- File status ----
     if (req.method === 'GET' && studioPath.startsWith('/api/file-status/')) {
       const fileId = studioPath.slice('/api/file-status/'.length)
-      if (!(await userOwnsFile(admin, userId, fileId))) return json({ error: 'Forbidden' }, 403)
+      if (!(await userOwnsFile(admin, userId, fileId))) return json(req, { error: 'Forbidden' }, 403)
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/files/${fileId}?key=${geminiKey()}`,
       )
       const data = await res.json()
-      if (!res.ok) return json({ error: 'Failed to get file status.' }, 500)
+      if (!res.ok) return json(req, { error: 'Failed to get file status.' }, 500)
       const state = data.state?.name || data.state
-      return json({ state })
+      return json(req, { state })
     }
 
     // ---- Video proxy ----
     if (req.method === 'GET' && studioPath.startsWith('/api/video/')) {
       const fileId = studioPath.slice('/api/video/'.length)
-      if (!(await userOwnsFile(admin, userId, fileId))) return json({ error: 'Forbidden' }, 403)
+      if (!(await userOwnsFile(admin, userId, fileId))) return json(req, { error: 'Forbidden' }, 403)
       const upstream = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/files/${fileId}:download?alt=media&key=${geminiKey()}`,
       )
       if (!upstream.ok) {
         return new Response(`Failed to fetch video: ${upstream.statusText}`, {
           status: upstream.status,
-          headers: corsHeaders,
+          headers: cors,
         })
       }
       const buffer = new Uint8Array(await upstream.arrayBuffer())
       const total = buffer.length
-      const headers = new Headers(corsHeaders)
+      const headers = new Headers(cors)
       headers.set('Content-Type', 'video/mp4')
       headers.set('Accept-Ranges', 'bytes')
-      headers.set('Cache-Control', 'public, max-age=31536000')
+      headers.set('Cache-Control', 'private, no-store')
 
       const range = req.headers.get('range')
       if (range) {
@@ -526,12 +564,12 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`
       return new Response(buffer, { status: 200, headers })
     }
 
-    return json({ error: `Unknown studio path: ${studioPath}` }, 404)
+    return json(req, { error: `Unknown studio path: ${studioPath}` }, 404)
   } catch (e) {
     const status = typeof (e as { status?: number })?.status === 'number'
       ? (e as { status: number }).status
       : 500
     console.error('studio-api error:', e)
-    return json({ error: safeClientError(e, 'Studio API request failed.') }, status)
+    return json(req, { error: safeClientError(e, 'Studio API request failed.') }, status)
   }
 })

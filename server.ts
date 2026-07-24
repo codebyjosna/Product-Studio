@@ -75,7 +75,24 @@ async function userOwnsFile(userId: string, fileId: string): Promise<boolean> {
 function safeClientError(e: unknown, fallback: string) {
   const msg = e instanceof Error ? e.message : fallback;
   if (/insufficient_tokens/i.test(msg)) return 'Insufficient tokens.';
+  if (/too many ai requests/i.test(msg) || /rate_limited/i.test(msg)) {
+    return 'Too many AI requests. Try again in a minute.';
+  }
   return fallback;
+}
+
+async function enforceAiRateLimit(userId: string) {
+  const { error } = await getSupabaseAdmin().rpc('enforce_ai_rate_limit', {
+    p_user_id: userId,
+    p_max_per_window: 30,
+    p_window_seconds: 60,
+  });
+  if (error) {
+    if (/rate_limited/i.test(error.message)) {
+      throw Object.assign(new Error('Too many AI requests. Try again in a minute.'), { status: 429 });
+    }
+    console.warn('enforce_ai_rate_limit:', error.message);
+  }
 }
 
 // Load local env files (.env.local takes precedence over .env).
@@ -193,6 +210,7 @@ async function startServer() {
   // Endpoint to generate prompt
   app.post('/api/generate-prompt', requireAuth, async (req: AuthedRequest, res) => {
     try {
+      await enforceAiRateLimit(req.authUser!.id);
       const { productDesc, atmosphereDesc, productImages = [], atmosphereImages = [] }: GenerateBody = req.body;
       const { durationSec, aspectRatio } = normalizeVideoFormat(req.body || {});
       const shots = shotCeilingForDuration(durationSec);
@@ -274,6 +292,7 @@ Output **only** the directive prompt — nothing else. It must begin with the wo
   // hard-coded examples, so every selection carries a description / style brief.
   app.post('/api/describe', requireAuth, async (req: AuthedRequest, res) => {
     try {
+      await enforceAiRateLimit(req.authUser!.id);
       const { type, images = [] }: { type?: 'product' | 'atmosphere'; images?: InlineImage[] } = req.body;
       if (images.length === 0) {
         res.status(400).json({ error: 'No images provided' });
@@ -323,13 +342,17 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
   // pipeline as the atmosphere reference — the user never sees it until it lands
   // in the "sources" strip under the finished video.
   app.post('/api/generate-atmosphere', requireAuth, async (req: AuthedRequest, res) => {
-    // Charged as part of video submit via generate-video; atmosphere step is included.
+    const userId = req.authUser!.id;
+    let charged = false;
     try {
+      await enforceAiRateLimit(userId);
       const { input }: { input?: string } = req.body;
       if (!input || !input.trim()) {
         res.status(400).json({ error: 'No atmosphere prompt provided' });
         return;
       }
+      await consumeTokensForUser(userId, (await tokenCost()));
+      charged = true;
       const ai = getAiClient();
 
       // Stage 1 — interpret the user's setting into an on-aesthetic image prompt.
@@ -366,6 +389,7 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
 
       res.json({ image: { data, mimeType }, prompt: imagePrompt });
     } catch (e: any) {
+      if (charged) await refundTokensForUser(userId, (await tokenCost()));
       console.error('Error generating atmosphere:', e);
       res.status(500).json({ error: safeClientError(e, 'Failed to generate atmosphere.') });
     }
@@ -374,10 +398,25 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
   // Endpoint to start omni generation
   app.post('/api/generate-video', requireAuth, async (req: AuthedRequest, res) => {
     const userId = req.authUser!.id;
-    let charged = false;
     try {
-      await consumeTokensForUser(userId, (await tokenCost()));
-      charged = true;
+      await enforceAiRateLimit(userId);
+      // ERR-110: soft-check then charge only after Omni returns a URI (no timeout-eaten tokens).
+      const cost = await tokenCost();
+      const { data: profile } = await getSupabaseAdmin()
+        .from('profiles')
+        .select('tokens_remaining, plan_id')
+        .eq('id', userId)
+        .maybeSingle();
+      if (
+        profile &&
+        !(String(profile.plan_id) === 'enterprise' && profile.tokens_remaining == null) &&
+        profile.tokens_remaining != null &&
+        Number(profile.tokens_remaining) < cost
+      ) {
+        res.status(402).json({ error: 'Insufficient tokens.' });
+        return;
+      }
+
       const { prompt, productImages = [], atmosphereImages = [] }: GenerateBody & { prompt?: string } = req.body;
       const { durationSec, aspectRatio } = normalizeVideoFormat(req.body || {});
       const omniAspect = toOmniAspectRatio(aspectRatio);
@@ -402,21 +441,19 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
       });
 
       console.log(`Interaction created: ${interaction.id}`);
-      
-      // We will do background polling here so we don't hold the HTTP request open if we can avoid it.
-      // Or we can just hold it open since EAP allows background: true/false. Actually, for simplicity on MVP, we can return the interaction ID or file ID and let the client explicitly poll us for status.
-      
+
       if (!interaction.output_video || !interaction.output_video.uri) {
         throw new Error('No video URI returned from interaction.');
       }
-      
+
+      await consumeTokensForUser(userId, cost);
+
       const fileIdMatch = interaction.output_video.uri.match(/files\/([a-zA-Z0-9_-]+)/);
       const fileId = fileIdMatch ? fileIdMatch[1] : null;
       rememberOwnership(userId, fileId, interaction.id);
 
       res.json({ interactionId: interaction.id, uri: interaction.output_video.uri, fileId });
     } catch (e: any) {
-      if (charged) await refundTokensForUser(userId, (await tokenCost()));
       console.error('Error generating video:', e);
       const status = e?.status || 500;
       res.status(status).json({ error: safeClientError(e, 'Failed to generate video.') });
@@ -427,19 +464,43 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
   // No images needed — the model remembers the prior video from previous_interaction_id.
   app.post('/api/edit-video', requireAuth, async (req: AuthedRequest, res) => {
     const userId = req.authUser!.id;
-    let charged = false;
     try {
+      await enforceAiRateLimit(userId);
       const { previousInteractionId, instructions }: { previousInteractionId?: string; instructions?: string } = req.body;
       if (!previousInteractionId || !instructions) {
         res.status(400).json({ error: 'previousInteractionId and instructions are required' });
         return;
       }
       if (!ownedInteractions.get(userId)?.has(previousInteractionId)) {
-        res.status(403).json({ error: 'You do not own this video interaction.' });
+        const { data: owned } = await getSupabaseAdmin()
+          .from('generation_files')
+          .select('file_id')
+          .eq('user_id', userId)
+          .eq('interaction_id', previousInteractionId)
+          .limit(1)
+          .maybeSingle();
+        if (!owned) {
+          res.status(403).json({ error: 'You do not own this video interaction.' });
+          return;
+        }
+        rememberOwnership(userId, owned.file_id, previousInteractionId);
+      }
+      // ERR-110: charge after successful Omni edit
+      const cost = await tokenCost();
+      const { data: profile } = await getSupabaseAdmin()
+        .from('profiles')
+        .select('tokens_remaining, plan_id')
+        .eq('id', userId)
+        .maybeSingle();
+      if (
+        profile &&
+        !(String(profile.plan_id) === 'enterprise' && profile.tokens_remaining == null) &&
+        profile.tokens_remaining != null &&
+        Number(profile.tokens_remaining) < cost
+      ) {
+        res.status(402).json({ error: 'Insufficient tokens.' });
         return;
       }
-      await consumeTokensForUser(userId, (await tokenCost()));
-      charged = true;
       const ai = getAiClient();
 
       console.log(`Editing interaction ${previousInteractionId}...`);
@@ -457,13 +518,14 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
         throw new Error('No video URI returned from interaction.');
       }
 
+      await consumeTokensForUser(userId, cost);
+
       const fileIdMatch = interaction.output_video.uri.match(/files\/([a-zA-Z0-9_-]+)/);
       const fileId = fileIdMatch ? fileIdMatch[1] : null;
       rememberOwnership(userId, fileId, interaction.id);
 
       res.json({ interactionId: interaction.id, uri: interaction.output_video.uri, fileId });
     } catch (e: any) {
-      if (charged) await refundTokensForUser(userId, (await tokenCost()));
       console.error('Error editing video:', e);
       const status = e?.status || 500;
       res.status(status).json({ error: safeClientError(e, 'Failed to edit video.') });
@@ -522,7 +584,7 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
       const total = buffer.length;
       res.setHeader('Content-Type', 'video/mp4');
       res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Cache-Control', 'public, max-age=31536000');
+        res.setHeader('Cache-Control', 'private, no-store');
 
       const range = req.headers.range;
       if (range) {
@@ -594,6 +656,7 @@ Output ONLY the style brief text — no labels, no quotes, no preamble.`;
     const userId = req.authUser!.id;
     let charged = false;
     try {
+      await enforceAiRateLimit(userId);
       const { prompt, imageBase64, type } = req.body;
       if (!prompt) {
         return res.status(400).json({ error: "Prompt is required" });
